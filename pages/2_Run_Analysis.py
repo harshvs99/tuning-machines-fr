@@ -3,14 +3,11 @@ from utils.api_client import run_analysis_pipeline
 from utils.firebase_client import upload_company_and_docs
 import re
 from utils.firebase_client import upload_company_and_docs
-Logger = st.logger if hasattr(st, 'logger') else None
 
-# --- Auth Check ---
 if not st.session_state.get("authenticated", False):
     st.error("You must be logged in to view this page.")
     st.page_link("streamlit_app.py", label="Back to Login")
     st.stop()
-# --- End Auth Check ---
 
 st.title("Step 2: Run New Analysis")
 st.write("Provide the company name and public URLs to its documents (e.g., GCS, S3, Dropbox public link).")
@@ -36,20 +33,13 @@ with st.form("analysis_form"):
         type=["pdf", "docx", "pptx"],
         accept_multiple_files=True
     )
-
     doc_urls_text = st.text_area(
         "Enter all document URLs (one per line):",
-        height=150,
+        height=75,
         placeholder="https://storage.googleapis.com/.../Pitch Deck.pdf\nhttps://storage.googleapis.com/.../Financials.pdf"
     )
     st.caption("**Pitch deck is mandatory for the company analysis.**")
-    
-    # Optional: LinkedIn URLs (your schema has it, but API doesn't take it)
-    # We can add this later if you update your backend to accept founder_linkedin_urls
-    founder_linkedin = st.text_input("Founder LinkedIn URLs (optional, comma-separated)")
-
     if uploaded_files:
-        # Upload files to Firebase Storage and get their public URLs
         try:
             company_id, file_urls = upload_company_and_docs(company_name, uploaded_files)
             doc_urls_text += "\n" + "\n".join(file_urls)
@@ -57,6 +47,15 @@ with st.form("analysis_form"):
         except Exception as e:
             st.error(f"Error uploading files: {e}")
             file_urls = []
+        
+    # --- End File Uploads ---
+
+    # Optional: LinkedIn URLs (your schema has it, but API doesn't take it)
+    # We can add this later if you update your backend to accept founder_linkedin_urls
+    founder_linkedin = st.text_input("Founder LinkedIn URLs (optional, comma-separated)")
+
+
+    
     submitted = st.form_submit_button("Run Full Analysis", type="primary")
 
 if submitted:
@@ -76,23 +75,6 @@ if submitted:
         st.error(f"The following URLs appear to be invalid: {', '.join(invalid_urls)}")
         st.stop()
         
-    # # All checks passed, run the analysis
-    # # with st.spinner(f"Running analysis for {company_name}... This may take a few minutes."):
-    # st.info(f"Running analysis for {company_name}... This may take a few minutes.")
-    # success = run_analysis_pipeline(company_name, doc_urls)
-    # print(st.session_state['api_response'])
-    
-    # if success:
-    #     st.success(f"Analysis for {company_name} complete!")
-    #     st.balloons()
-    #     st.info("Redirecting to the First Pass Report...")
-    #     st.switch_page("pages/3_First_Pass_Report.py")
-    # else:
-    #     st.error("Analysis failed. Please see the error message above.")
-
-
-    # All checks passed, run the analysis
-    # Use st.status for a spinner that can be updated by the client
     with st.status(f"Submitting analysis for {company_name}...", expanded=True) as status_ui:
         success = run_analysis_pipeline(company_name, doc_urls)
     

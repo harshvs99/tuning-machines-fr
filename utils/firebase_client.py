@@ -1,33 +1,69 @@
+# utils/firebase_client.py
+
 from datetime import datetime
 import firebase_admin
-from firebase_admin import credentials, firestore
-from firebase_admin import storage
-from logging import Logger
-from pytz import timezone
+from firebase_admin import credentials, firestore, storage
+from google.cloud.firestore import Client as FirestoreClient  # <-- Keep this
+from google.oauth2 import service_account  # <-- Add this import
 import streamlit as st
 import os
 
-Logger = st.logger if hasattr(st, 'logger') else None
+# --- Use logger instance ---
+logger = st.logger.get_logger(__name__) 
+# --- End logger instance ---
 
 # --- Initialize Firebase once ---
-# firebase_secrets = dict(st.secrets["firebase"])
+
+# 1. Load the credential path from secrets
 firebase_cred_path = st.secrets.get("FIREBASE_CREDENTIALS_PATH", "")
-if firebase_cred_path and os.path.exists(firebase_cred_path):
-    import json
-    with open(firebase_cred_path, 'r') as f:
-        firebase_secrets = json.load(f)
-else:
-    firebase_secrets = dict(st.secrets["firebase"])
+if not firebase_cred_path or not os.path.exists(firebase_cred_path):
+    logger.error("FIREBASE_CREDENTIALS_PATH not found in secrets or file is missing.")
+    st.error("Firebase credentials not found. App cannot start.")
+    st.stop()
+    
+# 2. Load the config strings from the [firebase] section
+try:
+    firebase_config = st.secrets.firebase
+    PROJECT_ID = firebase_config.project_id
+    DATABASE_ID = firebase_config.FIRESTORE_DATABASE_ID
+except Exception as e:
+    logger.error(f"Could not load values from [firebase] in secrets: {e}")
+    st.error("Firebase configuration is missing from secrets.toml.")
+    st.stop()
 
-# Initialize Firebase
-cred = credentials.Certificate(firebase_secrets)
+# BUCKET_NAME = f"{PROJECT_ID}.appspot.com" # Standard Firebase bucket name
+BUCKET_NAME = f"{PROJECT_ID}.firebasestorage.app"
+
+# --- Create TWO distinct credential objects ---
+
+# 3. Create the firebase-admin credential (for app init and storage)
+cred_firebase = credentials.Certificate(firebase_cred_path)
+
+# 4. Create the google-auth credential (for FirestoreClient)
+#    This is the object that FirestoreClient expects.
+cred_google_auth = service_account.Credentials.from_service_account_file(firebase_cred_path)
+
+# --- End credential creation ---
+
+# 5. Initialize the Firebase app (using its credential)
 if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred, {
-    "storageBucket": f"{firebase_secrets['project_id']}.firebasestorage.app"
-})
+    firebase_admin.initialize_app(cred_firebase, {
+        "storageBucket": BUCKET_NAME
+    })
 
-db = firestore.client()
-bucket = storage.bucket()
+# --- Get clients ---
+
+# 6. Use FirestoreClient (with the google-auth credential)
+db = FirestoreClient(
+    project=PROJECT_ID,
+    credentials=cred_google_auth, # <-- Use the correct credential object
+    database=DATABASE_ID
+)
+
+# 7. Get the storage bucket (uses the initialized app's context)
+bucket = storage.bucket(name=BUCKET_NAME)
+# --- End Firebase Init ---
+
 # --- End Firebase Init ---
 
 # # --- File Uploads ---
@@ -53,10 +89,12 @@ def upload_company_and_docs(company_name, uploaded_files):
 
         # Get the company id
         company_id = company_ref[1].id if isinstance(company_ref, tuple) else company_ref.id
+        # document_name = f"{'_'.join(company_name.split())}_{company_id}"
 
         # Upload docs to Google Storage
         file_urls = []
         for file in uploaded_files:
+            # blob = bucket.blob(f"companies/{company_id}/{file.name}")
             blob = bucket.blob(f"companies/{company_id}/{file.name}")
             blob.upload_from_file(file, content_type=file.type)
 
@@ -74,8 +112,7 @@ def upload_company_and_docs(company_name, uploaded_files):
             })
         return company_id, file_urls
     except Exception as e:
-        if Logger:
-            Logger.error(f"Error uploading company and documents: {e}")
+        logger.error(f"Error uploading company and documents: {e}")
         raise e
-    return None, []
+    
 # --- End File Uploads ---

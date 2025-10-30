@@ -1,5 +1,6 @@
 import streamlit as st
 import logging
+logging.basicConfig(level=logging.ERROR, filename="app.log")
 
 # Set page config as the first Streamlit command
 st.set_page_config(
@@ -14,8 +15,6 @@ st.set_page_config(
 # st.experimental_user, Okta, Auth0)
 # This is a simple placeholder.
 VALID_PASSWORD = "123" 
-
-Logger = st.logger if hasattr(st, 'logger') else None
 
 def check_password():
     """Returns `True` if the user has the correct password."""
