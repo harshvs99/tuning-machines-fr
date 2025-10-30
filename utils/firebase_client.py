@@ -23,9 +23,8 @@ if not firebase_cred_path or not os.path.exists(firebase_cred_path):
     
 # 2. Load the config strings from the [firebase] section
 try:
-    firebase_config = st.secrets.firebase
-    PROJECT_ID = firebase_config.project_id
-    DATABASE_ID = firebase_config.FIRESTORE_DATABASE_ID
+    PROJECT_ID = st.secrets.firebase.project_id
+    DATABASE_ID = st.secrets.FIRESTORE_DATABASE_ID
 except Exception as e:
     logger.error(f"Could not load values from [firebase] in secrets: {e}")
     st.error("Firebase configuration is missing from secrets.toml.")
@@ -52,6 +51,7 @@ if not firebase_admin._apps:
     })
 
 # --- Get clients ---
+
 
 # 6. Use FirestoreClient (with the google-auth credential)
 db = FirestoreClient(
