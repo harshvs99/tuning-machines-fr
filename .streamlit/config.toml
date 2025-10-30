@@ -1,2 +1,2 @@
-[ui]
-sidebarNavExpanded = false
+[browser]
+gatherUsageStats = false

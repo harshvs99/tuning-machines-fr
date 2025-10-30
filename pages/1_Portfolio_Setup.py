@@ -68,3 +68,6 @@ if st.session_state.portfolio_cos:
     st.dataframe(st.session_state.portfolio_cos, column_config={"value": "Company Name"}, use_container_width=True)
 else:
     st.info("No portfolio companies entered yet.")
+
+st.divider()
+st.page_link("pages/2_Run_Analysis.py", label="Next Step: Run New Analysis", icon="➡️")

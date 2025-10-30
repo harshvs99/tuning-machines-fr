@@ -3,3 +3,4 @@ requests
 pandas
 google-api-python-client
 google-auth-oauthlib
+firebase-admin
