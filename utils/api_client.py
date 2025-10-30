@@ -8,10 +8,10 @@ BASE_URL = st.secrets["BACKEND_BASE_URL"]
 BACKEND_SUBMIT_URL = f"{BASE_URL}/analyze/all"
 BACKEND_STATUS_URL = f"{BASE_URL}/analyze/status/"
 
-# Polling parameters (remains the same)
-INITIAL_POLLING_DELAY = 60*4
-POLLING_INTERVAL = 30
-POLLING_TIMEOUT = 600
+# Polling parameters
+INITIAL_POLLING_DELAY = 60*4  # Seconds to wait before first status check
+POLLING_INTERVAL = 30  # Seconds to wait between status checks
+POLLING_TIMEOUT = 600  # 10 minutes total timeout for the whole process
 
 @st.cache_data(show_spinner=False)
 def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str]):
@@ -22,9 +22,16 @@ def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str
     3. Saves the final result to Firestore using company_id.
     Stores the *final result* in st.session_state['api_response'].
     """
+    
+    # --- UPDATED PAYLOAD ---
+    investing_thesis = {"overall_thesis": st.session_state.vc_thesis,
+                        "industry_weights": st.session_state.get("industry_preferences", {})}
     payload = {
         "documents_url": doc_urls,
-        "company_name": company_name
+        "company_name": company_name,
+        # --- PULL PREFERENCES FROM SESSION STATE ---
+        "investing_thesis": investing_thesis,
+        "vc_portfolio_information": st.session_state.get("portfolio_cos", [])
     }
     
     start_time = time.time()
@@ -46,15 +53,18 @@ def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str
             return False
 
         st.info(f"Job submitted successfully (Job ID: {job_id}). Waiting for results...")
+        
+        # Waits for the expected time gap
         time.sleep(INITIAL_POLLING_DELAY)
         
         # --- Step 2: Poll for Results ---
         while True:
-            # (Polling logic remains the same)
+            # Check for overall timeout
             if time.time() - start_time > POLLING_TIMEOUT:
                 st.error("Error: The analysis request timed out while waiting for results.")
                 return False
 
+            # Make the status check call
             status_url = f"{BACKEND_STATUS_URL}{job_id}"
             status_response = requests.get(status_url, timeout=30)
             status_response.raise_for_status()
@@ -80,13 +90,14 @@ def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str
                 return True
                 
             elif job_status == "Failed":
-                # (Remains the same)
+                # --- FAILURE ---
                 error_message = status_data.get("error", "Unknown analysis failure.")
                 st.error(f"Analysis Failed: {error_message}")
                 return False
                 
             elif job_status == "Pending":
-                # (Remains the same)
+                # --- PENDING ---
+                # This is the normal case, wait and poll again
                 st.status(f"Analysis in progress... (Status: {job_status}). Checking again in {POLLING_INTERVAL}s.", state="running")
                 time.sleep(POLLING_INTERVAL)
                 
