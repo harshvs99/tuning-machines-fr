@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+from utils.firebase_client import update_fund_config
 
 # --- Auth Check ---
 if not st.session_state.get("authenticated", False):
@@ -45,6 +46,7 @@ if st.session_state.new_industries_to_score:
         if submitted:
             # Update the main preferences dict
             st.session_state.industry_preferences.update(new_scores)
+            update_fund_config("industry_preferences", st.session_state.industry_preferences) # <-- ADD THIS
             # Clear the "to-score" list
             st.session_state.new_industries_to_score = []
             st.success("New industry preferences saved!")
@@ -62,6 +64,7 @@ with st.form("thesis_form"):
     )
     if st.form_submit_button("Save Thesis"):
         st.session_state.vc_thesis = thesis_text
+        update_fund_config("vc_thesis", thesis_text) # <-- ADD THIS
         st.success("Investment thesis updated!")
 
 st.divider()
@@ -106,6 +109,7 @@ with st.form("industry_pref_form"):
         st.session_state.industry_preferences = dict(
             zip(edited_df["Industry"], edited_df["Score (1-5)"])
         )
+        update_fund_config("industry_preferences", st.session_state.industry_preferences) # <-- ADD THIS
         st.success("Industry preferences updated!")
 
 st.divider()
@@ -137,6 +141,7 @@ with st.form("portfolio_form"):
                 
                 new_portfolio_list = df.iloc[:, 0].dropna().astype(str).tolist()
                 st.session_state.portfolio_cos = list(set(new_portfolio_list)) # Remove duplicates
+                update_fund_config("portfolio_cos", st.session_state.portfolio_cos) # <-- ADD THIS
                 st.success(f"Portfolio updated from file. Found {len(st.session_state.portfolio_cos)} companies.")
             
             except Exception as e:
@@ -145,6 +150,7 @@ with st.form("portfolio_form"):
         elif portfolio_list_text.strip():
             new_portfolio_list = [name.strip() for name in portfolio_list_text.split("\n") if name.strip()]
             st.session_state.portfolio_cos = list(set(new_portfolio_list)) # Remove duplicates
+            update_fund_config("portfolio_cos", st.session_state.portfolio_cos) # <-- ADD THIS
             st.success(f"Portfolio updated from text. Found {len(st.session_state.portfolio_cos)} companies.")
         
         else:

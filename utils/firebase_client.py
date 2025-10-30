@@ -155,3 +155,37 @@ def get_all_analyses():
         logger.error(f"Error fetching all analyses: {e}")
         st.error(f"Could not load analysis history: {e}")
         return []
+    
+# --- NEW FUNCTION 3: Fund Config ---
+FUND_CONFIG_REF = db.collection("settings").document("fund_config")
+
+def load_fund_config():
+    """
+    Fetches the fund's configuration document from Firestore.
+    Returns the data dictionary if it exists, or an empty dict if not.
+    """
+    try:
+        doc = FUND_CONFIG_REF.get()
+        if doc.exists:
+            logger.info("Fund config loaded from Firestore.")
+            return doc.to_dict()
+        else:
+            logger.warning("No fund config found in Firestore, will use defaults.")
+            return {}
+    except Exception as e:
+        logger.error(f"Error loading fund config: {e}")
+        return {} # Return empty dict on error to avoid crashing app
+
+def update_fund_config(field: str, data: any):
+    """
+    Updates a single field in the fund's configuration document.
+    'field' is the key (e.g., "vc_thesis") and 'data' is the value.
+    """
+    try:
+        # .update() with merge=True will create the doc if it doesn't exist
+        # or just update the specific field if it does.
+        FUND_CONFIG_REF.set({field: data}, merge=True)
+        logger.info(f"Fund config updated for field: {field}")
+    except Exception as e:
+        logger.error(f"Error updating fund config for field {field}: {e}")
+        st.error(f"Error saving {field} to database: {e}")

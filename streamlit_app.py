@@ -36,22 +36,37 @@ def check_password():
     return False
 
 # --- Initialize Session State ---
+# In streamlit_app.py
+from utils.firebase_client import load_fund_config # <-- Add this import
+
+# --- Initialize Session State ---
 def init_session_state():
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
-    if "vc_thesis" not in st.session_state:
-        st.session_state["vc_thesis"] = "Our fund invests in early-stage (Seed, Series A) B2B companies in India with a strong technical founder."
-    if "portfolio_cos" not in st.session_state:
-        st.session_state["portfolio_cos"] = []
-    if "industry_preferences" not in st.session_state:
-        # We'll store this as a dictionary: {"Industry Name": Score}
-        st.session_state.industry_preferences = {
-            "B2B SaaS": 5,
-            "Fintech": 4,
-            "D2C Brands": 2
-        }
+
+    # --- NEW: Load config from Firestore ONCE per session ---
+    if "config_loaded" not in st.session_state:
+        config_data = load_fund_config() # This is the one-time DB call
+
+        # Get data from config, or use default if key doesn't exist
+        st.session_state.vc_thesis = config_data.get(
+            "vc_thesis", 
+            "Our fund invests in early-stage (Seed, Series A) B2B companies in India with a strong technical founder."
+        )
+        st.session_state.portfolio_cos = config_data.get("portfolio_cos", [])
+        st.session_state.industry_preferences = config_data.get(
+            "industry_preferences", 
+            {
+                "B2B SaaS": 5,
+                "Fintech": 4,
+                "D2C Brands": 2
+            }
+        )
+        st.session_state.config_loaded = True # Set flag to prevent re-loading
+    # --- END NEW LOGIC ---
+
+    # These are runtime variables, not persistent config
     if "new_industries_to_score" not in st.session_state:
-        # This list will be populated by the analysis report
         st.session_state.new_industries_to_score = []
     if "api_response" not in st.session_state:
         st.session_state["api_response"] = None
@@ -59,6 +74,30 @@ def init_session_state():
         st.session_state["chat_history"] = []
     if "analysis_complete" not in st.session_state:
         st.session_state["analysis_complete"] = False
+
+# def init_session_state():
+#     if "authenticated" not in st.session_state:
+#         st.session_state["authenticated"] = False
+#     if "vc_thesis" not in st.session_state:
+#         st.session_state["vc_thesis"] = "Our fund invests in early-stage (Seed, Series A) B2B companies in India with a strong technical founder."
+#     if "portfolio_cos" not in st.session_state:
+#         st.session_state["portfolio_cos"] = []
+#     if "industry_preferences" not in st.session_state:
+#         # We'll store this as a dictionary: {"Industry Name": Score}
+#         st.session_state.industry_preferences = {
+#             "B2B SaaS": 5,
+#             "Fintech": 4,
+#             "D2C Brands": 2
+#         }
+#     if "new_industries_to_score" not in st.session_state:
+#         # This list will be populated by the analysis report
+#         st.session_state.new_industries_to_score = []
+#     if "api_response" not in st.session_state:
+#         st.session_state["api_response"] = None
+#     if "chat_history" not in st.session_state:
+#         st.session_state["chat_history"] = []
+#     if "analysis_complete" not in st.session_state:
+#         st.session_state["analysis_complete"] = False
 
 # --- Main App ---
 init_session_state()

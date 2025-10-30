@@ -13,7 +13,6 @@ INITIAL_POLLING_DELAY = 60*4  # Seconds to wait before first status check
 POLLING_INTERVAL = 30  # Seconds to wait between status checks
 POLLING_TIMEOUT = 600  # 10 minutes total timeout for the whole process
 
-@st.cache_data(show_spinner=False)
 def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str]):
     """
     Calls the FastAPI backend asynchronously and saves the result to Firestore.
