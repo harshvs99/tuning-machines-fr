@@ -47,7 +47,7 @@ for analysis in analyses:
             st.subheader(company_name)
             st.caption(f"Last Analyzed: {display_date}")
         with col2:
-            if st.button("Load Report", key=company_id, use_container_width=True, type="secondary"):
+            if st.button("Load Report", key=company_id, width='stretch', type="secondary"):
                 
                 analysis_report = analysis.get("analysis_report")
                 if not analysis_report:

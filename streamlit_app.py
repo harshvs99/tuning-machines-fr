@@ -40,10 +40,19 @@ def init_session_state():
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
     if "vc_thesis" not in st.session_state:
-        # st.session_state["vc_thesis"] = "Set your VC Thesis in the Portfolio Setup tab. (Eg. Our fund invests in early-stage (Seed, Series A) B2B SaaS companies in India with a strong technical founder."
         st.session_state["vc_thesis"] = "Our fund invests in early-stage (Seed, Series A) B2B companies in India with a strong technical founder."
     if "portfolio_cos" not in st.session_state:
         st.session_state["portfolio_cos"] = []
+    if "industry_preferences" not in st.session_state:
+        # We'll store this as a dictionary: {"Industry Name": Score}
+        st.session_state.industry_preferences = {
+            "B2B SaaS": 5,
+            "Fintech": 4,
+            "D2C Brands": 2
+        }
+    if "new_industries_to_score" not in st.session_state:
+        # This list will be populated by the analysis report
+        st.session_state.new_industries_to_score = []
     if "api_response" not in st.session_state:
         st.session_state["api_response"] = None
     if "chat_history" not in st.session_state:
