@@ -67,6 +67,7 @@ st.sidebar.success("You are logged in.")
 st.sidebar.page_link("streamlit_app.py", label="Home / Login")
 
 st.sidebar.header("Analysis Workflow")
+st.sidebar.page_link("pages/0_Analysis_History.py", label="0. Analysis History")
 st.sidebar.page_link("pages/1_Portfolio_Setup.py", label="1. Portfolio Setup")
 st.sidebar.page_link("pages/2_Run_Analysis.py", label="2. Run New Analysis")
 st.sidebar.page_link("pages/3_First_Pass_Report.py", label="3. First Pass Report")
@@ -81,10 +82,12 @@ st.write(f"**Investment Thesis:** {st.session_state.vc_thesis}")
 st.write(f"**Portfolio Companies:** {', '.join(st.session_state.portfolio_cos) if st.session_state.portfolio_cos else 'None'}")
 st.divider()
 st.page_link("pages/1_Portfolio_Setup.py", label="Setup your Portfolio", icon="➡️")
+st.page_link("pages/0_Analysis_History.py", label="Or load a previous Analysis", icon="➡️")
 
 if st.session_state.api_response:
     company = st.session_state.api_response.get('l1_analysis_report', {}).get('company_analysed', 'N/A')
     st.subheader(f"Current Analysis in Memory: :orange[{company}]")
     st.page_link("pages/3_First_Pass_Report.py", label="Go to report")
 else:
-    st.info("No analysis has been run yet. Go to the 'Run New Analysis' page to start.")
+    st.info("No analysis has been run yet. Go to the 'Run New Analysis' page to start.\n" \
+    "Or load a previous analysis from the 'Analysis History' page.")

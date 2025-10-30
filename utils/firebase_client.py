@@ -60,59 +60,98 @@ db = FirestoreClient(
     database=DATABASE_ID
 )
 
-# 7. Get the storage bucket (uses the initialized app's context)
 bucket = storage.bucket(name=BUCKET_NAME)
 # --- End Firebase Init ---
 
-# --- End Firebase Init ---
-
-# # --- File Uploads ---
-# uploaded_files = st.file_uploader(
-#     "Upload Documents (Pitch Decks, Financials, Founder Profile, etc.)",
-#     type=["pdf", "docx", "pptx"],
-#     accept_multiple_files=True
-# )
-
-# Get current time 
-# now = datetime.now(timezone.utc)      # timezone-aware UTC datetime
 now = datetime.now() 
 iso_now = now.isoformat()             # JSON-safe string
 
 def upload_company_and_docs(company_name, uploaded_files):
     """Uploads company info and documents to Firestore and Cloud Storage."""
+    if not company_name:
+        raise ValueError("Company name cannot be empty.")
+        
     try:
-        company_ref = db.collection("companies").add({
+        # Create a document with an initial pending status
+        company_ref, doc_ref = db.collection("companies").add({
             "company_analysed": company_name,
+            "analysis_status": "Pending",
             "created_at": iso_now,
             "updated_at": iso_now
         })
 
         # Get the company id
-        company_id = company_ref[1].id if isinstance(company_ref, tuple) else company_ref.id
-        # document_name = f"{'_'.join(company_name.split())}_{company_id}"
+        company_id = doc_ref.id
 
         # Upload docs to Google Storage
         file_urls = []
-        for file in uploaded_files:
-            # blob = bucket.blob(f"companies/{company_id}/{file.name}")
-            blob = bucket.blob(f"companies/{company_id}/{file.name}")
-            blob.upload_from_file(file, content_type=file.type)
+        if uploaded_files:
+            for file in uploaded_files:
+                blob = bucket.blob(f"companies/{company_id}/{file.name}")
+                blob.upload_from_file(file, content_type=file.type)
 
-            # Make file public (for demo purposes)
-            blob.make_public()
-            file_url = blob.public_url
-            file_urls.append(file_url)
+                # Make file public (for demo purposes)
+                blob.make_public()
+                file_url = blob.public_url
+                file_urls.append(file_url)
 
-            # Save file metadata in Firestore
-            db.collection("companies").document(company_id).collection("documents").add({
-                "file_name": file.name,
-                "file_type": file.type,
-                "storage_url": file_url,
-                "uploaded_at": iso_now
-            })
+                # Save file metadata in Firestore
+                db.collection("companies").document(company_id).collection("documents").add({
+                    "file_name": file.name,
+                    "file_type": file.type,
+                    "storage_url": file_url,
+                    "uploaded_at": iso_now
+                })
         return company_id, file_urls
     except Exception as e:
         logger.error(f"Error uploading company and documents: {e}")
         raise e
-    
-# --- End File Uploads ---
+
+# --- NEW FUNCTION 1: Save Analysis ---
+def save_analysis_to_firestore(company_id: str, analysis_data: dict):
+    """
+    Saves the completed analysis JSON blob to the company's Firestore document.
+    """
+    try:
+        company_ref = db.collection("companies").document(company_id)
+        company_ref.update({
+            "analysis_report": analysis_data,  # Save the whole JSON blob
+            "analysis_status": "Complete",     # Mark as complete
+            "updated_at": datetime.now().isoformat()
+        })
+        logger.info(f"Successfully saved analysis for company {company_id}")
+    except Exception as e:
+        # Log the error but don't stop the app. The user still has the
+        # analysis in their session.
+        logger.error(f"Error saving analysis to Firestore for {company_id}: {e}")
+        st.error(f"Note: Could not save analysis to database. Error: {e}")
+
+# --- NEW FUNCTION 2: Get Analyses ---
+def get_all_analyses():
+    """
+    Fetches all companies with completed analyses, ordered by
+    last updated (newest first).
+    """
+    try:
+        companies_ref = db.collection("companies")
+        
+        # Create a query to get completed analyses, ordered by 'updated_at'
+        query = companies_ref.where(
+            filter=firestore.FieldFilter("analysis_status", "==", "Complete")
+        ).order_by(
+            "updated_at", direction=firestore.Query.DESCENDING
+        )
+        
+        docs = query.stream()
+        
+        analyses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["company_id"] = doc.id  # Add the doc ID for keying
+            analyses.append(data)
+            
+        return analyses
+    except Exception as e:
+        logger.error(f"Error fetching all analyses: {e}")
+        st.error(f"Could not load analysis history: {e}")
+        return []

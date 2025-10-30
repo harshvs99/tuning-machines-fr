@@ -1,22 +1,25 @@
+# utils/api_client.py
 import streamlit as st
 import requests
 import time
+from utils.firebase_client import save_analysis_to_firestore # <-- IMPORT
 
 BASE_URL = st.secrets["BACKEND_BASE_URL"]
-BACKEND_SUBMIT_URL = f"{BASE_URL}/analyze/all"  # Your original endpoint
-BACKEND_STATUS_URL = f"{BASE_URL}/analyze/status/" # The new GET endpoint
+BACKEND_SUBMIT_URL = f"{BASE_URL}/analyze/all"
+BACKEND_STATUS_URL = f"{BASE_URL}/analyze/status/"
 
-# Polling parameters
-INITIAL_POLLING_DELAY = 60*4  # Seconds to wait before first status check
-POLLING_INTERVAL = 30  # Seconds to wait between status checks
-POLLING_TIMEOUT = 600  # 10 minutes total timeout for the whole process
+# Polling parameters (remains the same)
+INITIAL_POLLING_DELAY = 60*4
+POLLING_INTERVAL = 30
+POLLING_TIMEOUT = 600
 
 @st.cache_data(show_spinner=False)
-def run_analysis_pipeline(company_name: str, doc_urls: list[str]):
+def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str]):
     """
-    Calls the FastAPI backend asynchronously.
+    Calls the FastAPI backend asynchronously and saves the result to Firestore.
     1. Submits the job and gets a job_id.
     2. Polls the status endpoint until the job is "Complete" or "Failed".
+    3. Saves the final result to Firestore using company_id.
     Stores the *final result* in st.session_state['api_response'].
     """
     payload = {
@@ -30,11 +33,9 @@ def run_analysis_pipeline(company_name: str, doc_urls: list[str]):
 
     try:
         # --- Step 1: Submit the Job ---
-        # Use a short timeout for the submission request
         submit_response = requests.post(BACKEND_SUBMIT_URL, json=payload, timeout=30)
         submit_response.raise_for_status()
         
-        # Expect a 202 Accepted response with a job_id
         if submit_response.status_code != 202:
              st.error(f"Error: Backend did not accept job. Status: {submit_response.status_code}, {submit_response.text}")
              return False
@@ -45,18 +46,15 @@ def run_analysis_pipeline(company_name: str, doc_urls: list[str]):
             return False
 
         st.info(f"Job submitted successfully (Job ID: {job_id}). Waiting for results...")
-
-        # Waits for the expected time gap
         time.sleep(INITIAL_POLLING_DELAY)
         
         # --- Step 2: Poll for Results ---
         while True:
-            # Check for overall timeout
+            # (Polling logic remains the same)
             if time.time() - start_time > POLLING_TIMEOUT:
                 st.error("Error: The analysis request timed out while waiting for results.")
                 return False
 
-            # Make the status check call
             status_url = f"{BACKEND_STATUS_URL}{job_id}"
             status_response = requests.get(status_url, timeout=30)
             status_response.raise_for_status()
@@ -66,26 +64,29 @@ def run_analysis_pipeline(company_name: str, doc_urls: list[str]):
 
             if job_status == "Complete":
                 # --- SUCCESS ---
-                # Store the *result* object, not the whole status response.
-                # This ensures pages 3, 4, 5, 6 don't need to be changed.
-                st.session_state['api_response'] = status_data.get("result")
-                st.session_state['analysis_complete'] = True
+                result_data = status_data.get("result")
                 
-                if st.session_state['api_response'] is None:
+                if result_data is None:
                      st.error("Error: Job completed but no result data was found.")
                      return False
-                     
+                
+                # Store in session
+                st.session_state['api_response'] = result_data
+                st.session_state['analysis_complete'] = True
+                
+                # --- NEW: Save to Firestore ---
+                save_analysis_to_firestore(company_id, result_data)
+                
                 return True
                 
             elif job_status == "Failed":
-                # --- FAILURE ---
+                # (Remains the same)
                 error_message = status_data.get("error", "Unknown analysis failure.")
                 st.error(f"Analysis Failed: {error_message}")
                 return False
                 
             elif job_status == "Pending":
-                # --- PENDING ---
-                # This is the normal case, wait and poll again
+                # (Remains the same)
                 st.status(f"Analysis in progress... (Status: {job_status}). Checking again in {POLLING_INTERVAL}s.", state="running")
                 time.sleep(POLLING_INTERVAL)
                 

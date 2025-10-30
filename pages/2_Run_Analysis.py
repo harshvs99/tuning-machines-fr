@@ -1,8 +1,8 @@
+# pages/2_Run_Analysis.py
 import streamlit as st
 from utils.api_client import run_analysis_pipeline
 from utils.firebase_client import upload_company_and_docs
 import re
-from utils.firebase_client import upload_company_and_docs
 
 if not st.session_state.get("authenticated", False):
     st.error("You must be logged in to view this page.")
@@ -10,52 +10,37 @@ if not st.session_state.get("authenticated", False):
     st.stop()
 
 st.title("Step 2: Run New Analysis")
-st.write("Provide the company name and public URLs to its documents (e.g., GCS, S3, Dropbox public link).")
+st.write("Upload your documents or provide public URLs (e.g., GCS, S3, Dropbox public link).")
 
-# URL regex for basic validation
 URL_REGEX = re.compile(
-    r'^(?:http|ftp)s?://' # http:// or https://
-    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|' # domain...
-    r'localhost|' # localhost...
-    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})' # ...or ip
-    r'(?::\d+)?' # optional port
+    r'^(?:http|ftp)s?://' 
+    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'
+    r'localhost|'
+    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+    r'(?::\d+)?'
     r'(?:/?|[/?]\S+)$', re.IGNORECASE)
 
 with st.form("analysis_form"):
     company_name = st.text_input("Company Name", placeholder="e.g., Fabpad")
     
-    st.subheader("Document URLs")
-    st.info("Your backend is configured to download files from public URLs. Please provide the links below.")
-    # --- File Uploads ---
-
+    st.subheader("Document Uploads")
     uploaded_files = st.file_uploader(
-        "Upload Documents (Pitch Decks, Financials, Founder Profile, etc.)",
+        "Upload Documents (Pitch Decks, Financials, etc.)",
         type=["pdf", "docx", "pptx"],
         accept_multiple_files=True
     )
+    
+    st.subheader("Document URLs")
+    st.info("Alternatively, provide public URLs below.")
     doc_urls_text = st.text_area(
         "Enter all document URLs (one per line):",
         height=75,
         placeholder="https://storage.googleapis.com/.../Pitch Deck.pdf\nhttps://storage.googleapis.com/.../Financials.pdf"
     )
     st.caption("**Pitch deck is mandatory for the company analysis.**")
-    if uploaded_files:
-        try:
-            company_id, file_urls = upload_company_and_docs(company_name, uploaded_files)
-            doc_urls_text += "\n" + "\n".join(file_urls)
-            st.success(f"Uploaded {len(uploaded_files)} files for {company_name}.")
-        except Exception as e:
-            st.error(f"Error uploading files: {e}")
-            file_urls = []
-        
-    # --- End File Uploads ---
-
-    # Optional: LinkedIn URLs (your schema has it, but API doesn't take it)
-    # We can add this later if you update your backend to accept founder_linkedin_urls
+    
     founder_linkedin = st.text_input("Founder LinkedIn URLs (optional, comma-separated)")
 
-
-    
     submitted = st.form_submit_button("Run Full Analysis", type="primary")
 
 if submitted:
@@ -65,7 +50,7 @@ if submitted:
         
     doc_urls = [url.strip() for url in doc_urls_text.split("\n") if url.strip()]
     
-    if not doc_urls:
+    if not doc_urls and not uploaded_files:
         st.warning("Please enter at least one document URL or upload files.")
         st.stop()
 
@@ -74,9 +59,30 @@ if submitted:
     if invalid_urls:
         st.error(f"The following URLs appear to be invalid: {', '.join(invalid_urls)}")
         st.stop()
-        
+    
+    # --- Step 1: Upload files and create company (MOVED HERE) ---
+    company_id = None
+    with st.status(f"Uploading files for {company_name}...", expanded=True) as upload_status:
+        try:
+            # This function now creates the company doc in Firestore
+            company_id, file_urls = upload_company_and_docs(company_name, uploaded_files)
+            doc_urls.extend(file_urls) # Add uploaded file URLs to the list
+            doc_urls = list(set(doc_urls)) # De-duplicate
+            
+            if not doc_urls:
+                 st.error("No valid document URLs found after processing. Please check inputs.")
+                 upload_status.update(label="File processing failed.", state="error")
+                 st.stop()
+
+            upload_status.update(label="File upload complete!", state="complete")
+        except Exception as e:
+            upload_status.update(label=f"File upload failed: {e}", state="error")
+            st.stop()
+
+    # --- Step 2: Run Analysis Pipeline ---
     with st.status(f"Submitting analysis for {company_name}...", expanded=True) as status_ui:
-        success = run_analysis_pipeline(company_name, doc_urls)
+        # Pass the new company_id to the pipeline
+        success = run_analysis_pipeline(company_id, company_name, doc_urls)
     
     if success:
         status_ui.update(label=f"Analysis for {company_name} complete!", state="complete")
