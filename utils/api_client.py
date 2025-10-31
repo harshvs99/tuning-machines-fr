@@ -2,7 +2,7 @@
 import streamlit as st
 import requests
 import time
-from utils.firebase_client import save_analysis_to_firestore # <-- IMPORT
+from utils.firebase_client import save_analysis_to_firestore # <-- This is kept
 
 BASE_URL = st.secrets["BACKEND_BASE_URL"]
 BACKEND_SUBMIT_URL = f"{BASE_URL}/analyze/all"
@@ -28,7 +28,7 @@ def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str
     payload = {
         "documents_url": doc_urls,
         "company_name": company_name,
-        # --- PULL PREFERENCES FROM SESSION STATE ---
+        "company_id": company_id, # <-- MODIFIED: Pass the company_id
         "investing_thesis": investing_thesis,
         "vc_portfolio_information": st.session_state.get("portfolio_cos", [])
     }
@@ -83,7 +83,7 @@ def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str
                 st.session_state['api_response'] = result_data
                 st.session_state['analysis_complete'] = True
                 
-                # --- NEW: Save to Firestore ---
+                # --- This save is kept for the "fast navigation" workflow ---
                 save_analysis_to_firestore(company_id, result_data)
                 
                 return True

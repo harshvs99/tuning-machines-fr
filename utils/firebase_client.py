@@ -3,8 +3,8 @@
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
-from google.cloud.firestore import Client as FirestoreClient  # <-- Keep this
-from google.oauth2 import service_account  # <-- Add this import
+from google.cloud.firestore import Client as FirestoreClient
+from google.oauth2 import service_account
 import streamlit as st
 import os
 
@@ -12,56 +12,82 @@ import os
 logger = st.logger.get_logger(__name__) 
 # --- End logger instance ---
 
-# --- Initialize Firebase once ---
-
-# 1. Load the credential path from secrets
-firebase_cred_path = st.secrets.get("FIREBASE_CREDENTIALS_PATH", "")
-if not firebase_cred_path or not os.path.exists(firebase_cred_path):
-    logger.error("FIREBASE_CREDENTIALS_PATH not found in secrets or file is missing.")
-    st.error("Firebase credentials not found. App cannot start.")
-    st.stop()
-    
-# 2. Load the config strings from the [firebase] section
+# --- Get Common Config ---
 try:
     PROJECT_ID = st.secrets.firebase.project_id
     DATABASE_ID = st.secrets.FIRESTORE_DATABASE_ID
+    BUCKET_NAME = f"{PROJECT_ID}.firebasestorage.app"
 except Exception as e:
     logger.error(f"Could not load values from [firebase] in secrets: {e}")
     st.error("Firebase configuration is missing from secrets.toml.")
     st.stop()
 
-# BUCKET_NAME = f"{PROJECT_ID}.appspot.com" # Standard Firebase bucket name
-BUCKET_NAME = f"{PROJECT_ID}.firebasestorage.app"
+# --- NEW: Hybrid Auth Logic ---
+IS_GOOGLE_CLOUD_ENV = st.secrets.get("IS_GOOGLE_CLOUD_ENV", "false").lower() == "true"
+db = None
+bucket = None
 
-# --- Create TWO distinct credential objects ---
+if IS_GOOGLE_CLOUD_ENV:
+    logger.info("Using Application Default Credentials (ADC) for Google Cloud.")
+    try:
+        # 1. Initialize Firebase App (for Storage, etc.)
+        # No credentials needed, ADC is used automatically.
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(options={
+                "storageBucket": BUCKET_NAME
+            })
+        
+        # 2. Get FirestoreClient (for Database)
+        # No credentials needed, ADC is used automatically.
+        db = FirestoreClient(
+            project=PROJECT_ID,
+            database=DATABASE_ID
+        )
+        
+        bucket = storage.bucket(name=BUCKET_NAME)
+        logger.info("Firebase (ADC) initialized successfully.")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize Firebase with ADC: {e}")
+        st.error(f"Failed to initialize Google Cloud connection: {e}")
+        st.stop()
+else:
+    logger.info("Using local Service Account file for credentials.")
+    # --- This is the original logic ---
+    firebase_cred_path = st.secrets.get("FIREBASE_CREDENTIALS_PATH", "")
+    if not firebase_cred_path or not os.path.exists(firebase_cred_path):
+        logger.error("FIREBASE_CREDENTIALS_PATH not found in secrets or file is missing.")
+        st.error("Firebase credentials not found. App cannot start in local mode.")
+        st.stop()
+        
+    try:
+        # 3. Create the firebase-admin credential (for app init and storage)
+        cred_firebase = credentials.Certificate(firebase_cred_path)
 
-# 3. Create the firebase-admin credential (for app init and storage)
-cred_firebase = credentials.Certificate(firebase_cred_path)
+        # 4. Create the google-auth credential (for FirestoreClient)
+        cred_google_auth = service_account.Credentials.from_service_account_file(firebase_cred_path)
 
-# 4. Create the google-auth credential (for FirestoreClient)
-#    This is the object that FirestoreClient expects.
-cred_google_auth = service_account.Credentials.from_service_account_file(firebase_cred_path)
+        # 5. Initialize the Firebase app (using its credential)
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred_firebase, {
+                "storageBucket": BUCKET_NAME
+            })
 
-# --- End credential creation ---
+        # 6. Use FirestoreClient (with the google-auth credential)
+        db = FirestoreClient(
+            project=PROJECT_ID,
+            credentials=cred_google_auth, # <-- Use the correct credential object
+            database=DATABASE_ID
+        )
 
-# 5. Initialize the Firebase app (using its credential)
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred_firebase, {
-        "storageBucket": BUCKET_NAME
-    })
+        bucket = storage.bucket(name=BUCKET_NAME)
+        logger.info("Firebase (local credentials) initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize Firebase with local credentials: {e}")
+        st.error(f"Failed to load local credentials: {e}")
+        st.stop()
+# --- END NEW HYBRID AUTH ---
 
-# --- Get clients ---
-
-
-# 6. Use FirestoreClient (with the google-auth credential)
-db = FirestoreClient(
-    project=PROJECT_ID,
-    credentials=cred_google_auth, # <-- Use the correct credential object
-    database=DATABASE_ID
-)
-
-bucket = storage.bucket(name=BUCKET_NAME)
-# --- End Firebase Init ---
 
 now = datetime.now() 
 iso_now = now.isoformat()             # JSON-safe string
