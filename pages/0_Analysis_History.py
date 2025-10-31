@@ -58,6 +58,11 @@ for analysis in analyses:
                 # 1. Load the data into session state
                 st.session_state['api_response'] = analysis_report
                 st.session_state['analysis_complete'] = True
+                
+                # --- NEW: Save company ID for updates ---
+                st.session_state['current_company_id'] = company_id
+                # --- END NEW ---
+                
                 # 2. Reset chat history for the new company
                 st.session_state['chat_history'] = [] 
                 

@@ -9,10 +9,6 @@ if not st.session_state.get("authenticated", False):
     st.page_link("streamlit_app.py", label="Back to Login")
     st.stop()
 
-# --- REMOVED INITIALIZATION BLOCK ---
-# We no longer initialize 'run_analysis_uploaded_files' here.
-# The file_uploader widget will create and manage it via its key.
-
 st.title("Step 2: Run New Analysis")
 st.write("Upload your documents or provide public URLs (e.g., GCS, S3, Dropbox public link).")
 
@@ -82,6 +78,7 @@ if submitted:
         try:
             # Pass the files from session state to your uploader function
             company_id, file_urls = upload_company_and_docs(company_name, files_from_state)
+            st.session_state['current_company_id'] = company_id
             
             doc_urls.extend(file_urls) # Add uploaded file URLs to the list
             doc_urls = list(set(doc_urls)) # De-duplicate
@@ -105,9 +102,6 @@ if submitted:
         status_ui.update(label=f"Analysis for {company_name} complete!", state="complete")
         st.success(f"Analysis for {company_name} complete!")
         st.balloons()
-        
-        # --- REMOVED CLEARING LINE ---
-        # st.session_state.run_analysis_uploaded_files = [] # <-- This was the error
         
         st.info("Redirecting to the First Pass Report...")
         st.switch_page("pages/3_First_Pass_Report.py")
