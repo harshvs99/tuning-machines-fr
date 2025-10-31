@@ -9,6 +9,10 @@ if not st.session_state.get("authenticated", False):
     st.page_link("streamlit_app.py", label="Back to Login")
     st.stop()
 
+# --- REMOVED INITIALIZATION BLOCK ---
+# We no longer initialize 'run_analysis_uploaded_files' here.
+# The file_uploader widget will create and manage it via its key.
+
 st.title("Step 2: Run New Analysis")
 st.write("Upload your documents or provide public URLs (e.g., GCS, S3, Dropbox public link).")
 
@@ -20,15 +24,21 @@ URL_REGEX = re.compile(
     r'(?::\d+)?'
     r'(?:/?|[/?]\S+)$', re.IGNORECASE)
 
+# --- STEP 1: FILE UPLOADER (OUTSIDE THE FORM) ---
+st.subheader("Document Uploads")
+# The 'key' will automatically store the files in st.session_state
+uploaded_files = st.file_uploader(
+    "Upload Documents (Pitch Decks, Financials, etc.)",
+    type=["pdf", "docx", "pptx"],
+    accept_multiple_files=True,
+    key='run_analysis_uploaded_files' # Persist the files in session state
+)
+st.caption("Files are processed when you click 'Run Full Analysis' below.")
+
+
+# --- STEP 2: THE FORM (WITHOUT THE FILE UPLOADER) ---
 with st.form("analysis_form"):
     company_name = st.text_input("Company Name", placeholder="e.g., Fabpad")
-    
-    st.subheader("Document Uploads")
-    uploaded_files = st.file_uploader(
-        "Upload Documents (Pitch Decks, Financials, etc.)",
-        type=["pdf", "docx", "pptx"],
-        accept_multiple_files=True
-    )
     
     st.subheader("Document URLs")
     st.info("Alternatively, provide public URLs below.")
@@ -43,14 +53,20 @@ with st.form("analysis_form"):
 
     submitted = st.form_submit_button("Run Full Analysis", type="primary")
 
+# --- STEP 3: SUBMISSION LOGIC (READS FROM SESSION STATE) ---
 if submitted:
+    # Read the files from session state using the key.
+    # Use .get() for safety, defaulting to an empty list if the key doesn't exist yet.
+    files_from_state = st.session_state.get('run_analysis_uploaded_files', [])
+    
     if not company_name:
         st.warning("Please enter a company name.")
         st.stop()
         
     doc_urls = [url.strip() for url in doc_urls_text.split("\n") if url.strip()]
     
-    if not doc_urls and not uploaded_files:
+    # Check both the URL list AND the files from session state
+    if not doc_urls and not files_from_state:
         st.warning("Please enter at least one document URL or upload files.")
         st.stop()
 
@@ -60,12 +76,13 @@ if submitted:
         st.error(f"The following URLs appear to be invalid: {', '.join(invalid_urls)}")
         st.stop()
     
-    # --- Step 1: Upload files and create company (MOVED HERE) ---
+    # --- Step 1: Upload files and create company ---
     company_id = None
     with st.status(f"Uploading files for {company_name}...", expanded=True) as upload_status:
         try:
-            # This function now creates the company doc in Firestore
-            company_id, file_urls = upload_company_and_docs(company_name, uploaded_files)
+            # Pass the files from session state to your uploader function
+            company_id, file_urls = upload_company_and_docs(company_name, files_from_state)
+            
             doc_urls.extend(file_urls) # Add uploaded file URLs to the list
             doc_urls = list(set(doc_urls)) # De-duplicate
             
@@ -88,6 +105,10 @@ if submitted:
         status_ui.update(label=f"Analysis for {company_name} complete!", state="complete")
         st.success(f"Analysis for {company_name} complete!")
         st.balloons()
+        
+        # --- REMOVED CLEARING LINE ---
+        # st.session_state.run_analysis_uploaded_files = [] # <-- This was the error
+        
         st.info("Redirecting to the First Pass Report...")
         st.switch_page("pages/3_First_Pass_Report.py")
     else:
