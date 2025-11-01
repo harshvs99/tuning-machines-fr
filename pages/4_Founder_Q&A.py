@@ -20,7 +20,12 @@ if not st.session_state.get("api_response") or not st.session_state.get("analysi
 
 # --- Q&A State Initialization (from Feature 1 - Unchanged) ---
 try:
-    if 'qa_questions_list' not in st.session_state:
+    if 'qa_complete' not in st.session_state:
+        st.session_state.qa_complete = False
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    if 'qa_questions_list' not in st.session_state and not st.session_state.qa_complete:
         discrepancy_report = st.session_state.api_response['discrepancy_report']
         questions = discrepancy_report.get('follow_up_questions', [])
         
@@ -33,8 +38,8 @@ try:
             st.session_state.qa_current_index = 0
             st.session_state.qa_complete = False 
     
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
+    # if 'chat_history' not in st.session_state:
+    #     st.session_state.chat_history = []
 
     if not st.session_state.chat_history and not st.session_state.qa_complete:
         initial_prompt = "Hello! Based on our initial analysis, we have a few follow-up questions to better understand your business."
@@ -107,6 +112,7 @@ if st.session_state.qa_complete:
         company_id = st.session_state.current_company_id
         
         with st.status("Submitting Q&A and re-running analysis... This may take a few minutes.", expanded=True) as status_ui:
+            st.session_state['l1_api_response_backup'] = st.session_state.api_response.copy()
             success = run_update_pipeline(
                 company_id=company_id,
                 current_analysis=st.session_state.api_response,

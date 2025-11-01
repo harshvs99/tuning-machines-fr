@@ -19,9 +19,13 @@ def run_analysis_pipeline(company_id: str, company_name: str, doc_urls: list[str
     """
     Calls the FastAPI backend asynchronously for an *initial* analysis.
     """
-    
+    preferences_dict = st.session_state.get("industry_preferences", {})
+    weights_list = [
+        {"industry": industry, "weight": weight} 
+        for industry, weight in preferences_dict.items()
+    ]
     investing_thesis = {"overall_thesis": st.session_state.vc_thesis,
-                        "industry_weights": st.session_state.get("industry_preferences", {})}
+                        "industry_weights": weights_list}
     payload = {
         "documents_url": doc_urls,
         "company_name": company_name,

@@ -184,7 +184,7 @@ def display_l1_data(report_name: str):
                     st.write("No Porter's analysis data found.")
 
         elif report_name == 'externalities_analysis':
-            st.metric("Existential Threat Identified?", "Yes 🔥" if report_data.get('existential_threat_identified') else "No ✅")
+            st.metric("Existential Threat Identified?", "Yes ❌" if report_data.get('existential_threat_identified') else "No ✅")
             st.markdown(f"**Summary:** {report_data.get('summary', 'N/A')}")
             
             risks = report_data.get('identified_risks', [])
@@ -221,8 +221,9 @@ def display_l1_data(report_name: str):
             # 1. Top-Line Assessment
             st.subheader("Financial Viability Assessment")
             viability = report_data.get('three_year_viability_check', {})
-            viability_share = viability.get('required_som_share', 0)
-            
+            viability_share = viability.get('required_som_share', 0) * 100
+            st.metric("Required SOM Share by Year 3", f"{viability_share:.2f}%")
+                        
             if viability_share is not None:
                 st.metric("Required SOM Share by Year 3", f"{viability_share * 100:.2f}%")
             else:
@@ -340,7 +341,7 @@ with tab_main:
         for finding in findings:
             risk = finding.get('risk_assessment', 'N/A')
             if risk == "High Risk":
-                st.error(f"**{risk}: {finding.get('claim')}**", icon="🔥")
+                st.error(f"**{risk}: {finding.get('claim')}**", icon="❌")
             elif risk == "Medium Risk":
                 st.warning(f"**{risk}: {finding.get('claim')}**", icon="⚠️")
             else:

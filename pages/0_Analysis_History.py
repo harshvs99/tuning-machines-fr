@@ -58,13 +58,16 @@ for analysis in analyses:
                 # 1. Load the data into session state
                 st.session_state['api_response'] = analysis_report
                 st.session_state['analysis_complete'] = True
-                
-                # --- NEW: Save company ID for updates ---
                 st.session_state['current_company_id'] = company_id
-                # --- END NEW ---
+
+                qa_transcript = analysis_report.get("founder_qa_transcript", [])
+                st.session_state['chat_history'] = qa_transcript
+                st.session_state['qa_complete'] = bool(qa_transcript)
                 
-                # 2. Reset chat history for the new company
-                st.session_state['chat_history'] = [] 
+                if 'qa_questions_list' in st.session_state:
+                    del st.session_state['qa_questions_list']
+                if 'qa_current_index' in st.session_state:
+                    del st.session_state['qa_current_index']
                 
                 st.success(f"Loaded report for {company_name}.")
                 time.sleep(1) # Give user a moment to see the success
