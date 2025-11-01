@@ -135,14 +135,64 @@ def display_l1_data(report_name: str, l1_report: dict, scoring_report: dict):
         report_data = l1_report[report_name]
         st.subheader("Detailed Analysis (Updated)")
         
+        # if report_name == 'founder_analysis':
+            # st.markdown(f"**Founder Count:** {report_data.get('founder_count')}")
+            # st.markdown("**Key Strengths:**")
+            # st.markdown("\n".join([f"> - {s}" for s in report_data.get('key_strengths', [])] or "> - N/A"))
+            # st.markdown("**Identified Gaps:**")
+            # st.markdown("\n".join([f"> - {g}" for g in report_data.get('identified_gaps', [])] or "> - N/A"))
+            # st.markdown(f"**Summary:** {report_data.get('summary', 'N/A')}")
         if report_name == 'founder_analysis':
-            st.markdown(f"**Founder Count:** {report_data.get('founder_count')}")
-            st.markdown("**Key Strengths:**")
-            st.markdown("\n".join([f"> - {s}" for s in report_data.get('key_strengths', [])] or "> - N/A"))
-            st.markdown("**Identified Gaps:**")
-            st.markdown("\n".join([f"> - {g}" for g in report_data.get('identified_gaps', [])] or "> - N/A"))
-            st.markdown(f"**Summary:** {report_data.get('summary', 'N/A')}")
+            st.metric("Founder Count", report_data.get('founder_count', 'N/A'))
 
+            founder_profiles = report_data.get('founder_profiles', [])
+            
+            if not founder_profiles:
+                st.info("No detailed founder profiles were generated.")
+            
+            for profile in founder_profiles:
+                with st.container(border=True):
+                    st.subheader(f"👤 {profile.get('name', 'Unknown Founder')}")
+                    
+                    # Display the 4-quadrant ratings
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Tech Competency", f"{profile.get('tech_competency', 0)}/5")
+                    col2.metric("Execution Ability", f"{profile.get('execution_ability', 0)}/5")
+                    col3.metric("Management Exp.", f"{profile.get('management_experience', 0)}/5")
+                    col4.metric("Sales Ability", f"{profile.get('sales_ability', 0)}/5")
+                    
+                    st.caption(f"**Profile Rationale:** {profile.get('profile_summary', 'N/A')}")
+                    
+                    with st.expander("View Detailed Skills"):
+                        st.markdown("**Top 5 Skillsets:**")
+                        skills = profile.get('top_5_skillsets', [])
+                        if skills:
+                            st.markdown("\n".join([f"- {s}" for s in skills]))
+                        else:
+                            st.markdown("- N/A")
+
+                        st.markdown("**Special Skills:**")
+                        special_skills = profile.get('special_skills', [])
+                        if special_skills:
+                            st.markdown("\n".join([f"- {s}" for s in special_skills]))
+                        else:
+                            st.markdown("- N/A")
+
+            st.divider()
+            
+            # --- Display the team-level summary ---
+            st.subheader("Team-Level Assessment")
+            
+            st.markdown("**Key Strengths (Team):**")
+            strengths_list = report_data.get('key_strengths', [])
+            st.markdown("\n".join([f"> - {s}" for s in strengths_list] or "> - N/A"))
+
+            st.markdown("**Identified Gaps (Team):**")
+            gaps_list = report_data.get('identified_gaps', [])
+            st.markdown("\n".join([f"> - {g}" for g in gaps_list] or "> - N/A"))
+            
+            st.markdown(f"**Overall Summary:** {report_data.get('summary', 'N/A')}")
+            
         elif report_name == 'product_analysis':
             st.markdown(f"**Core Product Offering:**\n> {report_data.get('core_product_offering', 'N/A')}")
             st.markdown(f"**Problem Solved:**\n> {report_data.get('problem_solved', 'N/A')}")

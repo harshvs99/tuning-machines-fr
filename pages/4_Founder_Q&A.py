@@ -22,9 +22,9 @@ if not st.session_state.get("api_response") or not st.session_state.get("analysi
 try:
     if 'qa_complete' not in st.session_state:
         st.session_state.qa_complete = False
-    if 'chat_history' not in st.session_state:
+    if 'chat_history' not in st.session_state or st.session_state.chat_history is None:
         st.session_state.chat_history = []
-    
+        
     if 'qa_questions_list' not in st.session_state and not st.session_state.qa_complete:
         discrepancy_report = st.session_state.api_response['discrepancy_report']
         questions = discrepancy_report.get('follow_up_questions', [])
