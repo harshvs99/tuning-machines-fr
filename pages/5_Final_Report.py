@@ -347,6 +347,66 @@ with tab_summary:
         df = pd.DataFrame(data).set_index("Factor")
         st.dataframe(df, width='stretch')
 
+    # --- NEWLY ADDED SECTION ---
+    st.divider()
+    st.subheader("📌 Company Investment Recommendation")
+    st.write("Assign a weight to each factor to generate a custom-weighted recommendation score.")
+
+    # Create sliders to understand the importance of each section for the analyst
+    col1, col2 = st.columns(2)
+    founder_weight = col1.select_slider("Founder Analysis Weightage", options=["Not Important", "Somewhat Important", "Important", "Very Important", "Most Important"], value="Important")
+    industry_weight = col2.select_slider("Industry Analysis Weightage", options=["Not Important", "Somewhat Important", "Important", "Very Important", "Most Important"], value="Important")
+    product_weight = col1.select_slider("Product Analysis Weightage", options=["Not Important", "Somewhat Important", "Important", "Very Important", "Most Important"], value="Very Important")
+    financial_weight = col2.select_slider("Financial Analysis Weightage", options=["Not Important", "Somewhat Important", "Important", "Very Important", "Most Important"], value="Very Important")
+    externalities_weight = col1.select_slider("Externalities & Risks Weightage", options=["Not Important", "Somewhat Important", "Important", "Very Important", "Most Important"], value="Somewhat Important")
+    competition_weight = col2.select_slider("Competition Analysis Weightage", options=["Not Important", "Somewhat Important", "Important", "Very Important", "Most Important"], value="Somewhat Important")
+
+    # Convert each weight to a numeric scale (0-5)
+    weight_map = {
+        "Not Important": 0,
+        "Somewhat Important": 1,
+        "Important": 3,
+        "Very Important": 4,
+        "Most Important": 5
+    }
+
+    weights = {
+        "founder": weight_map[founder_weight],
+        "industry": weight_map[industry_weight],
+        "product": weight_map[product_weight],
+        "financial": weight_map[financial_weight],
+        "externalities": weight_map[externalities_weight],
+        "competition": weight_map[competition_weight]
+    }
+
+    # Get the final scores from the report
+    # Note: This uses the 'final_scoring_report' variable loaded at the top
+    founder_assessment = final_scoring_report.get("founder_assessment", {}).get("score", 0)
+    industry_assessment = final_scoring_report.get("industry_assessment", {}).get("score", 0)
+    product_assessment = final_scoring_report.get("product_assessment", {}).get("score", 0)
+    financial_assessment = final_scoring_report.get("financial_assessment", {}).get("score", 0)
+    externalities_assessment = final_scoring_report.get("externalities_assessment", {}).get("score", 0)
+    competition_assessment = final_scoring_report.get("competition_assessment", {}).get("score", 0)
+    
+    # Total weighted is a weighted average of the assessments
+    total_weighted_score = (
+        (founder_assessment * weights["founder"]) +
+        (industry_assessment * weights["industry"]) +
+        (product_assessment * weights["product"]) +
+        (financial_assessment * weights["financial"]) +
+        (externalities_assessment * weights["externalities"]) +
+        (competition_assessment * weights["competition"])
+    ) / (sum(weights.values()) if sum(weights.values()) > 0 else 1)
+    
+    # Scale to 100 for the metric
+    final_score_100 = round(total_weighted_score * 20, 2) # (Score / 5) * 100 = Score * 20
+
+    # Display the recommendation
+    st.metric("Overall Investment Recommendation Score", f"{final_score_100} / 100.0")
+    
+    # --- END OF NEWLY ADDED SECTION ---
+
+
 # --- Individual Agent Tabs ---
 # Each tab now passes the correct data to the modified helpers
 

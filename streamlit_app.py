@@ -23,6 +23,7 @@ def check_password():
 
     st.title("Automated Investment Analyst Login 🤖")
     password = st.text_input("Password", type="password")
+    st.info("No password set for this yet, just click Login to proceed.")
     
     if st.button("Login"):
         st.session_state["authenticated"] = True
