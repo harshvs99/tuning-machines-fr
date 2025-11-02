@@ -103,16 +103,16 @@ def display_score(assessment_name: str):
 def format_currency_inr(value):
     if value is None:
         return "N/A"
-    if value >= 1_00_00_00_00_00_000: # Trillion
-        return f"₹{value / 1_00_00_00_00_00_000:.1f}T"
+    # if value >= 1_00_00_00_00_00_000: # Trillion
+    #     return f"₹{value / 1_00_00_00_00_00_000:.1f}T"
     if value >= 1_00_00_00_00_000: # Lakh Crores
-        return f"₹{value / 1_00_00_00_00_000:.1f}L Cr"
-    if value >= 1_00_00_00_000: # Crores (Billion)
-        return f"₹{value / 1_00_00_00_000:.1f}B" # B for Billion (100 Cr)
+        return f"₹{value / 1_00_00_00_00_000:.3f} Lakh Cr."
+    # if value >= 1_00_00_00_000: # Crores (Billion)
+    #     return f"₹{value / 1_00_00_00_000:.1f}B" # B for Billion (100 Cr)
     if value >= 1_00_00_000: # Crores
-        return f"₹{value / 1_00_00_000:.1f} Cr"
+        return f"₹{value / 1_00_00_000:.2f} Cr."
     if value >= 1_00_000: # Lakhs
-        return f"₹{value / 1_00_000:.1f}L"
+        return f"₹{value / 1_00_000:.1f} Lakh"
     return f"₹{value:,.0f}"
 
 # --- UPDATED: Helper Function for Rich L1 Data ---

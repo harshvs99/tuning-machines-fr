@@ -61,11 +61,11 @@ def format_currency_inr(value):
     # if value >= 1_00_00_00_00_00_000: # Trillion
     #     return f"₹{value / 1_00_00_00_00_00_000:.1f}T"
     if value >= 1_00_00_00_00_000: # Lakh Crores
-        return f"₹{value / 1_00_00_00_00_000:.1f}Lakh Cr"
+        return f"₹{value / 1_00_00_00_00_000:.1f} Lakh Cr."
     # if value >= 1_00_00_00_000: # Crores (Billion)
     #     return f"₹{value / 1_00_00_00_000:.1f}B" # B for Billion (100 Cr)
     if value >= 1_00_00_000: # Crores
-        return f"₹{value / 1_00_00_000:.1f} Cr"
+        return f"₹{value / 1_00_00_000:.1f} Cr."
     if value >= 1_00_000: # Lakhs
         return f"₹{value / 1_00_000:.1f} Lakh"
     return f"₹{value:,.0f}"
