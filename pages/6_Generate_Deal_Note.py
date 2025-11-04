@@ -3,7 +3,7 @@ import json
 import io
 from fpdf import FPDF
 from pathlib import Path
-from utils.pdf_client import build_deal_note_pdf, dict_to_pdf
+from utils.pdf_client import build_deal_note_pdf
 
 # --- Auth Check ---
 if not st.session_state.get("authenticated", False):
@@ -37,7 +37,7 @@ if not st.session_state.get("api_response") or not st.session_state.get("analysi
 st.info(
     """
 Provide a consolidated, exportable deal note PDF generated from the analysis JSON.
-The PDF uses clear headings and bullets (markdown-like style) for readability.
+The PDF uses clear headings and bullets (markdown-like style) for readability and VC view. 
 """
 )
 
@@ -49,7 +49,7 @@ api_data = st.session_state.api_response
 if st.button(f"Generate Deal Note for {company_name}", type="primary"):
 
     # try:
-    pdf_bytes = dict_to_pdf(api_data, company_name)
+    pdf_bytes = build_deal_note_pdf(api_data, company_name)
     st.success("PDF generated successfully.")
     st.download_button(
         label="Download Deal Note (PDF)",

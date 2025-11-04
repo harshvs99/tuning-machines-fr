@@ -1,16 +1,42 @@
-# robust_deal_note_pdf.py
-import io
-from pathlib import Path
-from fpdf import FPDF, errors as fpdf_errors
-import textwrap
-import traceback
+"""
+PDF Generator for Nested Dictionaries
+Converts any nested dictionary structure to a well-formatted PDF document.
+"""
 import json
+import traceback
+from pathlib import Path
+from fpdf import FPDF
 
-# --- Helpers to normalize text and handle long tokens ---
-def normalize_to_text(value, max_len=2000):
-    """Convert any Python object to a safe string for PDF output."""
+
+class DocumentPDF(FPDF):
+    """Custom PDF class with header and footer."""
+    
+    def header(self):
+        """Optional header - kept minimal."""
+        pass
+    
+    def footer(self):
+        """Add page numbers to footer."""
+        self.set_y(-12)
+        self.set_font("Helvetica", size=8)
+        self.cell(0, 6, f"Page {self.page_no()}", align="C")
+
+
+def normalize_text(value, max_len=2000, unicode_support=True):
+    """
+    Convert any Python object to a safe string for PDF output.
+    
+    Args:
+        value: Any Python object (str, int, float, dict, list, etc.)
+        max_len: Maximum length before truncation
+        unicode_support: Whether Unicode characters should be preserved (False = replace with ASCII)
+    
+    Returns:
+        str: Safe string representation
+    """
     if value is None:
         return ""
+    
     if isinstance(value, str):
         s = value
     else:
@@ -18,315 +44,385 @@ def normalize_to_text(value, max_len=2000):
             s = json.dumps(value, ensure_ascii=False, indent=2)
         except Exception:
             s = str(value)
-    # Replace NBSP
-    s = s.replace("\xa0", " ")
-    # Insert soft-break hint after slashes/hyphens to help fpdf wrap long URLs/tokens
-    s = s.replace("/", "/\u200b").replace("-", "-\u200b")
-    # Replace em dashes
-    s = s.replace("—", "—\u200b")
     
-    # Limit extremely long contiguous strings (e.g., base64)
+    # Replace non-breaking spaces
+    s = s.replace("\xa0", " ")
+    
+    # If no Unicode support (Helvetica fallback), replace Unicode characters
+    if not unicode_support:
+        # Replace em dash with regular dash
+        s = s.replace("—", "-").replace("–", "-")
+        # Replace other common Unicode characters
+        s = s.replace(""", '"').replace(""", '"')
+        s = s.replace("'", "'").replace("'", "'")
+        s = s.replace("…", "...")
+        s = s.replace("•", "*")  # Bullet point
+        s = s.replace("€", "EUR").replace("£", "GBP").replace("¥", "JPY")
+        # Remove any remaining non-ASCII characters that might cause issues
+        s = s.encode('ascii', 'replace').decode('ascii')
+    
+    # Insert zero-width spaces to help with word breaking for long URLs/tokens
+    s = s.replace("/", "/\u200b").replace("-", "-\u200b")
+    if unicode_support:
+        s = s.replace("—", "—\u200b")
+    
+    # Limit extremely long strings
     if len(s) > max_len:
-        # try to keep JSON shape: show start and end
         return s[:max_len//2] + "\n\n...[truncated]...\n\n" + s[-max_len//2:]
+    
     return s
 
-# --- Safe multi-cell writer for fpdf2 ---
-def safe_multicell(pdf: FPDF, text: str, lh: float = 6.0):
-    """Write text with wrapping; guarantee we pass a string and handle failures."""
+
+def safe_multicell(pdf: FPDF, text: str, lh: float = 6.0, indent: int = 0):
+    """
+    Safely write text to PDF with multiple fallback strategies.
+    
+    Args:
+        pdf: FPDF instance
+        text: Text to write
+        lh: Line height
+        indent: Left indentation in mm
+    """
     if text is None:
         text = ""
     if not isinstance(text, str):
         text = str(text)
 
-    # small safety: skip empty
-    if text.strip() == "":
+    if not text.strip():
         return
 
-    # attempt write with attempts to mitigate errors
+    # Apply indentation
+    if indent > 0:
+        pdf.cell(indent)
+    
     try:
-        pdf.multi_cell(w=0, h=lh, txt=text, new_x="LMARGIN", new_y="NEXT", max_line_height=pdf.font_size)
-    except Exception as e:
-        # try to break long tokens by inserting zero-width spaces aggressively
+        pdf.multi_cell(
+            w=0,
+            h=lh,
+            txt=text,
+            new_x="LMARGIN",
+            new_y="NEXT",
+            max_line_height=pdf.font_size
+        )
+    except Exception:
+        # Try breaking URLs and long tokens
         t = text.replace("http", "http\u200b").replace("www.", "www.\u200b")
         try:
-            pdf.multi_cell(w=0, h=lh, txt=t, new_x="LMARGIN", new_y="NEXT", max_line_height=pdf.font_size)
-            return
+            pdf.multi_cell(
+                w=0,
+                h=lh,
+                txt=t,
+                new_x="LMARGIN",
+                new_y="NEXT",
+                max_line_height=pdf.font_size
+            )
         except Exception:
-            # final fallback: truncate and write
+            # Final fallback: truncate
             trunc = (text[:1000] + "\n\n...[truncated]...") if len(text) > 1000 else text
             try:
-                pdf.multi_cell(w=0, h=lh, txt=trunc, new_x="LMARGIN", new_y="NEXT", max_line_height=pdf.font_size)
-            except Exception as e2:
-                # If that still fails, write an error line (must be short ASCII)
-                pdf.multi_cell(w=0, h=lh, txt="[Error rendering text — see logs]", new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(
+                    w=0,
+                    h=lh,
+                    txt=trunc,
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                    max_line_height=pdf.font_size
+                )
+            except Exception:
+                # Last resort: error message
+                pdf.multi_cell(
+                    w=0,
+                    h=lh,
+                    txt="[Error rendering text — see logs]",
+                    new_x="LMARGIN",
+                    new_y="NEXT"
+                )
 
-# --- Utility to pretty-render lists and dicts ---
-def write_kv(pdf: FPDF, d: dict):
-    for k, v in d.items():
-        safe_multicell(pdf, f"{k}:")
-        safe_multicell(pdf, normalize_to_text(v), lh=5)
 
-def write_bullets(pdf: FPDF, items):
-    for it in items:
-        text = normalize_to_text(it)
-        # indent bullet
-        pdf.cell(6)  # small left indent
-        safe_multicell(pdf, f"• {text}")
+def format_key(key: str) -> str:
+    """Format dictionary keys for display (snake_case to Title Case)."""
+    return key.replace("_", " ").title()
 
-# --- PDF builder ---
-class DealPDF(FPDF):
-    def header(self):
-        # optional header - minimal to avoid space issues
-        pass
-    def footer(self):
-        self.set_y(-12)
-        self.set_font("Helvetica", size=8)
-        self.cell(0, 6, f"Page {self.page_no()}", align="C")
 
-def build_deal_note_pdf(analysis: dict, company_name: str) -> bytes:
-    pdf = DealPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-
-    # Register DejaVu font if file exists in repo folder (improves unicode handling)
-    dejavu_paths = [
+def setup_font(pdf: FPDF):
+    """
+    Setup font with Unicode support if available.
+    Registers both regular and bold variants if DejaVu fonts are found.
+    
+    Args:
+        pdf: FPDF instance to configure
+    
+    Returns:
+        bool: True if Unicode font (DejaVu) was successfully registered, False otherwise
+    """
+    dejavu_regular_paths = [
         "dejavu-ttf/DejaVuSans.ttf",
-        "./DejaVuSans.ttf",
-        "dejavu-ttf/DejaVuSans-Bold.ttf"
+        "./DejaVuSans.ttf"
     ]
-    font_registered = False
-    for p in dejavu_paths:
-        if Path(p).exists():
+    
+    dejavu_bold_paths = [
+        "dejavu-ttf/DejaVuSans-Bold.ttf",
+        "./DejaVuSans-Bold.ttf"
+    ]
+    
+    # Try to register regular DejaVu font
+    regular_path = None
+    for path in dejavu_regular_paths:
+        if Path(path).exists():
             try:
-                pdf.add_font("DejaVu", "", p, uni=True)
-                pdf.set_font("DejaVu", size=12)
-                font_registered = True
+                pdf.add_font("DejaVu", "", path, uni=True)
+                regular_path = path
                 break
             except Exception:
-                font_registered = False
-
-    if not font_registered:
-        # fallback to Helvetica (may not render some unicode)
-        pdf.set_font("Helvetica", size=12)
-
-    # Title
-    company = company_name
-    safe_multicell(pdf, f"Deal Note — {company}")
-    pdf.ln(2)
-    pdf.set_font(pdf.font_family, size=11)
-
-    # A helper to walk keys safely and report path on failure
-    def safe_write(path, value):
-        try:
-            if isinstance(value, dict):
-                write_kv(pdf, value)
-            elif isinstance(value, list):
-                write_bullets(pdf, value)
-            else:
-                safe_multicell(pdf, normalize_to_text(value))
-        except Exception as e:
-            # write a short error line and record in console
-            pdf.multi_cell(0, 6, txt=f"[Failed to render field: {path}]")
-            print(f"Failed to render {path}: {e}")
-            traceback.print_exc()
-
-    # Example layout: iterate main sections
-    sections = [
-        ("Founder Analysis", ["founder_analysis"]),
-        ("Industry Analysis", ["industry_analysis"]),
-        ("Product Analysis", ["product_analysis"]),
-        ("Externalities & Risks", ["externalities_analysis"]),
-        ("Competition Analysis", ["competition_analysis"]),
-        ("Financial Analysis", ["financial_analysis"]),
-        ("Synergy Analysis", ["synergy_analysis"]),
-    ]
-
-    for title, keys in sections:
-        pdf.set_font(pdf.font_family, "B", 13)
-        safe_multicell(pdf, title)
-        pdf.ln(1)
-        pdf.set_font(pdf.font_family, size=11)
-        for key in keys:
-            val = analysis.get(key)
-            if not val:
-                # maybe nested under l1_analysis_report
-                val = analysis.get("l1_analysis_report", {}).get(key)
-            if not val:
-                # skip gracefully
-                safe_multicell(pdf, "(No data)")
                 continue
-
-            # write common expected fields neatly
-            # If it's a dict with assessment, show rating + score first
-            if isinstance(val, dict):
-                rating = val.get("assessment", {}).get("rating") or val.get("assessment", {}).get("score") or val.get("assessment", {}).get("rationale")
-                # show quick header for ratings if present
-                if "assessment" in val:
-                    ass = val["assessment"]
-                    if isinstance(ass, dict):
-                        r = ass.get("rating")
-                        s = ass.get("score")
-                        if r or s is not None:
-                            safe_multicell(pdf, f"Rating: {r}  |  Score: {s}")
-                # Now write main summary keys if available
-                for subk in ["summary", "key_strengths", "identified_gaps", "core_product_offering", "problem_solved", "value_proposition_qualitative", "value_proposition_quantitative", "identified_risks", "direct_competitors", "unit_economics", "analyst_sizing", "three_year_viability_check", "potential_synergies"]:
-                    if subk in val:
-                        v = val[subk]
-                        pdf.set_font(pdf.font_family, "B", 11)
-                        safe_multicell(pdf, subk.replace("_", " ").title() + ":")
-                        pdf.set_font(pdf.font_family, size=11)
-                        safe_write(f"{key}.{subk}", v)
-                # finally write any leftover keys
-                leftover = {k:v for k,v in val.items() if k not in ["summary","key_strengths","identified_gaps","core_product_offering","problem_solved","value_proposition_qualitative","value_proposition_quantitative","identified_risks","direct_competitors","unit_economics","analyst_sizing","three_year_viability_check","potential_synergies","assessment"]}
-                if leftover:
-                    pdf.set_font(pdf.font_family, "B", 11)
-                    safe_multicell(pdf, "Other Details:")
-                    pdf.set_font(pdf.font_family, size=11)
-                    safe_write(f"{key}.other", leftover)
-            else:
-                safe_write(key, val)
-
-        pdf.ln(2)
-
-    # Final metadata
-    pdf.set_font(pdf.font_family, "B", 12)
-    safe_multicell(pdf, "Metadata:")
-    pdf.set_font(pdf.font_family, size=10)
-    sources = analysis.get("source_pitch_deck_urls") or analysis.get("l1_analysis_report", {}).get("source_pitch_deck_urls", [])
-    safe_write("metadata.sources", sources)
-
-    return pdf.output(dest="S").encode("utf-8", errors="ignore")
+    
+    # If regular font found, try to register bold variant
+    if regular_path:
+        bold_registered = False
+        for path in dejavu_bold_paths:
+            if Path(path).exists():
+                try:
+                    pdf.add_font("DejaVu", "B", path, uni=True)
+                    bold_registered = True
+                    break
+                except Exception:
+                    continue
+        
+        # Set the font (regular)
+        pdf.set_font("DejaVu", size=12)
+        return True
+    
+    # Fallback to Helvetica (no Unicode support)
+    pdf.set_font("Helvetica", size=12)
+    return False
 
 
-def dict_to_pdf(data: dict, title: str = "Document", max_depth: int = 10) -> bytes:
+def filter_founder_qa(data):
+    """
+    Recursively filter out founder_qa_transcript from the dictionary.
+    
+    Args:
+        data: Dictionary to filter
+    
+    Returns:
+        dict: Filtered dictionary with founder_qa_transcript keys removed
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    filtered = {}
+    for key, value in data.items():
+        # Skip founder_qa_transcript key
+        if key == "founder_qa_transcript":
+            continue
+        
+        # Recursively filter nested dictionaries
+        if isinstance(value, dict):
+            filtered[key] = filter_founder_qa(value)
+        elif isinstance(value, list):
+            # Filter list items if they are dictionaries
+            filtered[key] = [
+                filter_founder_qa(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            filtered[key] = value
+    
+    return filtered
+
+
+def dict_to_pdf(data: dict, title: str = "Document", max_depth: int = 20) -> bytes:
     """
     Convert any nested dictionary to a PDF file.
     
+    This function handles:
+    - Nested dictionaries of any depth
+    - Lists containing primitives, dictionaries, or other lists
+    - Strings, numbers, booleans, and null values
+    - Long text with automatic wrapping and truncation
+    - Unicode characters (when DejaVu font is available)
+    
     Args:
-        data: The nested dictionary to convert
+        data: The nested dictionary to convert (can be any depth)
         title: Title for the PDF document
-        max_depth: Maximum nesting depth to prevent infinite recursion
+        max_depth: Maximum nesting depth to prevent infinite recursion (default: 20)
     
     Returns:
-        bytes: PDF file as bytes, ready for download
+        bytes: PDF file as bytes, ready for Streamlit download_button
+    
+    Example:
+        >>> data = {"key1": {"nested": "value"}, "key2": [1, 2, 3]}
+        >>> pdf_bytes = dict_to_pdf(data, title="My Report")
+        >>> st.download_button("Download", pdf_bytes, "report.pdf", "application/pdf")
     """
-    pdf = DealPDF()
+    # Filter out founder_qa_transcript before rendering
+    data = filter_founder_qa(data)
+    
+    pdf = DocumentPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Register DejaVu font if file exists in repo folder (improves unicode handling)
-    dejavu_paths = [
-        "dejavu-ttf/DejaVuSans.ttf",
-        "./DejaVuSans.ttf",
-        "dejavu-ttf/DejaVuSans-Bold.ttf"
-    ]
-    font_registered = False
-    for p in dejavu_paths:
-        if Path(p).exists():
-            try:
-                pdf.add_font("DejaVu", "", p, uni=True)
-                pdf.set_font("DejaVu", size=12)
-                font_registered = True
-                break
-            except Exception:
-                font_registered = False
-    
-    if not font_registered:
-        # fallback to Helvetica (may not render some unicode)
-        pdf.set_font("Helvetica", size=12)
+    # Setup font with Unicode support - track if we have it
+    has_unicode_font = setup_font(pdf)
+    font_family = "DejaVu" if has_unicode_font else "Helvetica"
     
     # Title
-    pdf.set_font(pdf.font_family, "B", 16)
-    safe_multicell(pdf, title)
-    pdf.ln(4)
-    pdf.set_font(pdf.font_family, size=11)
+    try:
+        pdf.set_font(font_family, "B" if has_unicode_font else "", 18)
+    except Exception:
+        # If bold fails, use regular
+        pdf.set_font(font_family, "", 18)
     
-    def render_value(value, key_path: str = "", depth: int = 0, indent: int = 0):
+    title_text = normalize_text(title, unicode_support=has_unicode_font)
+    safe_multicell(pdf, title_text, lh=8)
+    pdf.ln(6)
+    
+    def render_value(
+        value,
+        key_path: str = "",
+        depth: int = 0,
+        indent: int = 0,
+        is_list_item: bool = False
+    ):
         """
-        Recursively render any value (dict, list, or primitive) to the PDF.
+        Recursively render any value to the PDF.
         
         Args:
-            value: The value to render
+            value: The value to render (dict, list, or primitive)
             key_path: Path of keys for error reporting
             depth: Current nesting depth
-            indent: Visual indentation level (in mm)
+            indent: Visual indentation level in mm
+            is_list_item: Whether this is an item in a list
         """
         if depth > max_depth:
-            safe_multicell(pdf, "[Maximum depth exceeded]")
+            safe_multicell(pdf, "[Maximum depth exceeded]", indent=indent)
             return
         
         try:
+            # Handle None
             if value is None:
-                safe_multicell(pdf, "(null)")
+                safe_multicell(pdf, "(null)", lh=5, indent=indent)
                 pdf.ln(1)
+                return
             
-            elif isinstance(value, dict):
-                if not value:  # Empty dict
-                    safe_multicell(pdf, "(empty dictionary)")
+            # Handle dictionaries
+            if isinstance(value, dict):
+                if not value:
+                    empty_text = normalize_text("(empty dictionary)", unicode_support=has_unicode_font)
+                    safe_multicell(pdf, empty_text, lh=5, indent=indent)
                     pdf.ln(1)
-                else:
-                    for k, v in value.items():
-                        # Format key nicely
-                        key_display = k.replace("_", " ").title()
-                        
-                        # Set font for key
-                        pdf.set_font(pdf.font_family, "B", 11)
-                        
-                        # Add indentation
-                        if indent > 0:
-                            pdf.cell(indent)
-                        
-                        # Write key
-                        safe_multicell(pdf, f"{key_display}:")
-                        
-                        # Reset font for value
-                        pdf.set_font(pdf.font_family, size=10)
-                        
-                        # Recursively render value with increased depth and indent
-                        render_value(v, f"{key_path}.{k}" if key_path else k, depth + 1, indent + 8)
-                        pdf.ln(0.5)
+                    return
+                
+                # Render each key-value pair
+                for i, (k, v) in enumerate(value.items()):
+                    key_display = format_key(k)
+                    
+                    # Set bold font for keys (only if Unicode font supports it)
+                    try:
+                        pdf.set_font(font_family, "B" if has_unicode_font else "", 11)
+                    except Exception:
+                        pdf.set_font(font_family, "", 11)
+                    
+                    # Add spacing between dictionary items
+                    if i > 0:
+                        pdf.ln(1)
+                    
+                    # Write key with indentation
+                    key_text = normalize_text(f"{key_display}:", unicode_support=has_unicode_font)
+                    safe_multicell(pdf, key_text, lh=6, indent=indent)
+                    
+                    # Reset font for value
+                    pdf.set_font(font_family, "", 10)
+                    
+                    # Recursively render value
+                    new_path = f"{key_path}.{k}" if key_path else k
+                    render_value(v, new_path, depth + 1, indent + 8, False)
+                
+                pdf.ln(0.5)
+                return
             
-            elif isinstance(value, list):
-                if not value:  # Empty list
-                    safe_multicell(pdf, "(empty list)")
+            # Handle lists
+            if isinstance(value, list):
+                if not value:
+                    empty_text = normalize_text("(empty list)", unicode_support=has_unicode_font)
+                    safe_multicell(pdf, empty_text, lh=5, indent=indent)
                     pdf.ln(1)
-                else:
-                    for i, item in enumerate(value):
-                        # Add indentation
-                        if indent > 0:
-                            pdf.cell(indent)
-                        
-                        # If item is a dict or list, render it recursively without bullet
-                        if isinstance(item, (dict, list)):
-                            pdf.set_font(pdf.font_family, size=10)
-                            safe_multicell(pdf, f"Item {i+1}:", lh=5)
-                            render_value(item, f"{key_path}[{i}]" if key_path else f"[{i}]", depth + 1, indent + 8)
-                        else:
-                            # Primitive value - use bullet point
-                            pdf.set_font(pdf.font_family, size=10)
-                            text = normalize_to_text(item)
-                            safe_multicell(pdf, f"• {text}", lh=5)
+                    return
+                
+                # Render each list item
+                for i, item in enumerate(value):
+                    # Add spacing between list items
+                    if i > 0:
                         pdf.ln(0.5)
+                    
+                    # Handle nested structures in lists
+                    if isinstance(item, dict):
+                        # For dictionaries in lists, show "Item N:" label
+                        try:
+                            pdf.set_font(font_family, "B" if has_unicode_font else "", 10)
+                        except Exception:
+                            pdf.set_font(font_family, "", 10)
+                        item_text = normalize_text(f"Item {i+1}:", unicode_support=has_unicode_font)
+                        safe_multicell(pdf, item_text, lh=5, indent=indent)
+                        pdf.set_font(font_family, "", 10)
+                        render_value(item, f"{key_path}[{i}]" if key_path else f"[{i}]", depth + 1, indent + 8, True)
+                    elif isinstance(item, list):
+                        # For nested lists, show "List {i+1}:" and render recursively
+                        try:
+                            pdf.set_font(font_family, "B" if has_unicode_font else "", 10)
+                        except Exception:
+                            pdf.set_font(font_family, "", 10)
+                        list_text = normalize_text(f"List {i+1}:", unicode_support=has_unicode_font)
+                        safe_multicell(pdf, list_text, lh=5, indent=indent)
+                        pdf.set_font(font_family, "", 10)
+                        render_value(item, f"{key_path}[{i}]" if key_path else f"[{i}]", depth + 1, indent + 8, True)
+                    else:
+                        # Primitive values - use bullet point (or * if no Unicode)
+                        text = normalize_text(item, unicode_support=has_unicode_font)
+                        bullet = "•" if has_unicode_font else "*"
+                        safe_multicell(pdf, f"{bullet} {text}", lh=5, indent=indent)
+                
+                pdf.ln(0.5)
+                return
             
-            else:
-                # Primitive value (str, int, float, bool, etc.)
-                text = normalize_to_text(value)
-                if indent > 0:
-                    pdf.cell(indent)
-                safe_multicell(pdf, text, lh=5)
-                pdf.ln(1)
+            # Handle primitive values (str, int, float, bool, etc.)
+            text = normalize_text(value, unicode_support=has_unicode_font)
+            safe_multicell(pdf, text, lh=5, indent=indent)
+            pdf.ln(1)
         
         except Exception as e:
-            # Error handling - write error message
-            pdf.set_font(pdf.font_family, size=9)
-            error_msg = f"[Error rendering {key_path}: {str(e)}]"
-            safe_multicell(pdf, error_msg)
+            # Error handling
+            pdf.set_font(font_family, "", 9)
+            error_msg = f"[Error rendering {key_path}: {str(e)[:100]}]"
+            safe_multicell(pdf, error_msg, indent=indent)
             pdf.ln(1)
             print(f"Failed to render {key_path}: {e}")
             traceback.print_exc()
     
     # Render the entire dictionary
+    pdf.set_font(font_family, "", 10)
     render_value(data)
+
+    # Return PDF as bytes
+    pdf_bytes = pdf.output(dest="S")
+    # pdf.output(dest="S") already returns bytes/bytearray, convert to bytes if needed
+    if isinstance(pdf_bytes, bytearray):
+        return bytes(pdf_bytes)
+    return pdf_bytes
+
+
+# Keep the old function name for backward compatibility
+def build_deal_note_pdf(analysis: dict, company_name: str) -> bytes:
+    """
+    Legacy function for backward compatibility.
+    Converts analysis dictionary to PDF with company name as title.
     
-    return pdf.output(dest="S").encode("utf-8", errors="ignore")
+    Args:
+        analysis: Analysis dictionary
+        company_name: Company name for the title
+    
+    Returns:
+        bytes: PDF file as bytes
+    """
+    title = f"Deal Note — {company_name}" if company_name else "Deal Note"
+    return dict_to_pdf(analysis, title=title)
