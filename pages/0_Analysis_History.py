@@ -3,6 +3,7 @@ import streamlit as st
 from utils.firebase_client import get_all_analyses
 from datetime import datetime
 import time
+import json
 
 # --- Auth Check ---
 if not st.session_state.get("authenticated", False):
@@ -57,6 +58,7 @@ for analysis in analyses:
                 # --- This is the core logic ---
                 # 1. Load the data into session state
                 st.session_state['api_response'] = analysis_report
+
                 st.session_state['analysis_complete'] = True
                 st.session_state['current_company_id'] = company_id
 
