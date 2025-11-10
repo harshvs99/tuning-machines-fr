@@ -25,7 +25,7 @@ st.subheader("Document Uploads")
 # The 'key' will automatically store the files in st.session_state
 uploaded_files = st.file_uploader(
     "Upload Documents (Pitch Decks, Financials, etc.)",
-    type=["pdf", "docx", "pptx"],
+    type=["pdf"],
     accept_multiple_files=True,
     key='run_analysis_uploaded_files' # Persist the files in session state
 )
