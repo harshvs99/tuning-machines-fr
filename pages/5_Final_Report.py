@@ -89,7 +89,9 @@ def display_score(assessment_name: str, new_score_data: dict, old_score_data: di
         else: # 4 or 5
             color = "green"
 
-        st.subheader(f"Final Assessment: :{color}[{new_score}/5 ({rating})]")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader(f"Final Assessment: :{color}[{new_score}/5 ({rating})]")
         
         # --- NEW: Show score comparison ---
         if has_backup:
@@ -105,12 +107,13 @@ def display_score(assessment_name: str, new_score_data: dict, old_score_data: di
                 delta_str = "No Change"
                 delta_color = "off"
             
-            st.metric(
+            col2.metric(
                 label="Score Evolution (Post-Q&A)",
                 value=f"{new_score}/5",
                 delta=delta_str,
                 delta_color=delta_color,
-                help=f"The score changed from {old_score}/5 to {new_score}/5 after the Founder Q&A."
+                help=f"The score changed from {old_score}/5 to {new_score}/5 after the Founder Q&A.",
+                border=True
             )
         # --- END NEW ---
         

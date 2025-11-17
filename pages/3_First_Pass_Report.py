@@ -22,7 +22,7 @@ try:
     api_response = st.session_state.api_response
     l1_report = api_response['l1_analysis_report']
     scoring_report = api_response['scoring_report']
-    discrepancy_report = api_response['discrepancy_report'] # This is the correct top-level key
+    discrepancy_report = api_response['discrepancy_report']
     company_name = l1_report.get('company_analysed', 'N/A')
     st.header(f"Analysis for: :orange[{company_name}]")
 except (KeyError, TypeError) as e:
@@ -272,10 +272,8 @@ def display_l1_data(report_name: str):
             st.subheader("Financial Viability Assessment")
             viability = report_data.get('three_year_viability_check', {})
             viability_share = viability.get('required_som_share', 0) * 100
-            st.metric("Required SOM Share by Year 3", f"{viability_share:.2f}%")
-                        
             if viability_share is not None:
-                st.metric("Required SOM Share by Year 3", f"{viability_share * 100:.2f}%")
+                st.metric("Required SOM Share by Year 3", f"{viability_share:.2f}%")
             else:
                 st.metric("Required SOM Share by Year 3", "N/A")
 
@@ -371,14 +369,85 @@ def display_l1_data(report_name: str):
 
 # --- Main Tab Layout ---
 tab_names = [
+    "Executive Summary", 
     "🚩 Red Flags / Verification", 
     "1. Founder", "2. Industry", "3. Product", 
     "4. Externalities", "5. Competition", "6. Financials", "7. Synergies"
 ]
-tab_main, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(tab_names)
+# Note the new 'tab_summary' and 'tab_red_flags' variables
+tab_summary, tab_red_flags, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(tab_names)
 
-# --- Red Flags Tab ---
-with tab_main:
+# --- NEW: Executive Summary Tab ---
+with tab_summary:
+    st.header("Executive Summary")
+    
+    try:
+        # 1. Pull data from the L1 report
+        product_data = l1_report.get('product_analysis', {})
+        industry_data = l1_report.get('industry_analysis', {})
+        competition_data = l1_report.get('competition_analysis', {})
+
+        # 2. Display the "Value Chain" overview
+        st.subheader("What is the business?")
+        st.markdown(f"**Core Product Offering:**")
+        st.markdown(f"> {product_data.get('core_product_offering', 'N/A')}")
+        
+        st.markdown(f"**Problem Solved:**")
+        st.markdown(f"> {product_data.get('problem_solved', 'N/A')}")
+        
+        st.divider()
+
+        st.subheader("Where do they fit in the market?")
+        st.metric("Activity-Based Industry", industry_data.get('activity_based_industry', 'N/A'))
+        st.markdown("**Competitive Advantage:**")
+        st.success(f"{competition_data.get('competitive_advantage', 'N/A')}")
+
+        # col1, col2 = st.columns(2)
+        # col1.metric("Activity-Based Industry", industry_data.get('activity_based_industry', 'N/A'))
+        
+        # with col2:
+        #     st.markdown("**Competitive Advantage:**")
+        #     st.success(f"{competition_data.get('competitive_advantage', 'N/A')}")
+
+        st.divider()
+
+        # 3. Display the "At-a-Glance" Scorecard
+        st.subheader("At-a-Glance Scorecard")
+        score_data = []
+        factor_keys = [
+            ("founder_assessment", "Founder"),
+            ("industry_assessment", "Industry"),
+            ("product_assessment", "Product"),
+            ("externalities_assessment", "Externalities"),
+            ("competition_assessment", "Competition"),
+            ("financial_assessment", "Financials"),
+            ("synergy_assessment", "Synergies")
+        ]
+        
+        for key, name in factor_keys:
+            assessment = scoring_report.get(key, {})
+            score_data.append({
+                "Factor": name,
+                "Score (1-5)": assessment.get('score', 'N/A'),
+                "Rating": assessment.get('rating', 'N/A'),
+                "Rationale": assessment.get('rationale', 'No rationale.')
+            })
+        
+        score_df = pd.DataFrame(score_data).set_index("Factor")
+        st.dataframe(
+            score_df,
+            column_config={
+                "Rationale": st.column_config.TextColumn("Rationale", width="large")
+            },
+            width='stretch'
+        )
+
+    except Exception as e:
+        st.error(f"Failed to build Executive Summary: {e}")
+        st.json(api_response)
+
+# --- Red Flags Tab (Renamed from tab_main to tab_red_flags) ---
+with tab_red_flags: # <-- RENAMED VARIABLE
     st.header("Discrepancy & Verification Report")
     st.info("This report flags inconsistencies found between the pitch deck and external data. These form the basis for the Founder Q&A.")
     

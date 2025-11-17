@@ -3,11 +3,13 @@ import streamlit as st
 import requests
 import time
 from utils.firebase_client import save_analysis_to_firestore 
+import json
 
 BASE_URL = st.secrets["BACKEND_BASE_URL"]
 BACKEND_SUBMIT_URL = f"{BASE_URL}/analyze/all"
 BACKEND_STATUS_URL = f"{BASE_URL}/analyze/status/"
 BACKEND_UPDATE_URL = f"{BASE_URL}/analyze/update"
+BACKEND_SLIDES_URL = f"{BASE_URL}/analyze/slides"
 
 
 # Polling parameters
@@ -188,3 +190,151 @@ def run_update_pipeline(company_id: str, current_analysis: dict, chat_history: l
         st.error(f"An unexpected error occurred: {err}")
     
     return False
+
+def run_slide_generation_pipeline(analysis_data: dict): # <-- NEW FUNCTION
+    """
+    Calls the FastAPI backend to trigger the slide generation pipeline
+    and polls for the final URL.
+    """
+    
+    start_time = time.time()
+    
+    try:
+        # --- Step 1: Submit the Slide Gen Job ---
+        # We POST the entire analysis JSON as the payload
+        submit_response = requests.post(
+            BACKEND_SLIDES_URL, 
+            data=json.dumps(analysis_data), # Send the data
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+        submit_response.raise_for_status()
+        
+        if submit_response.status_code != 202:
+             st.error(f"Error: Backend did not accept slide job. Status: {submit_response.status_code}, {submit_response.text}")
+             return None
+             
+        job_id = submit_response.json().get("job_id")
+        if not job_id:
+            st.error("Error: Backend did not return a job_id for slide generation.")
+            return None
+
+        st.info(f"Slide generation job submitted (Job ID: {job_id}). Waiting for pipeline... (This can take 3-5 minutes)")
+        
+        # --- Step 2: Poll for Results ---
+        while True:
+            if time.time() - start_time > POLLING_TIMEOUT:
+                st.error("Error: The slide generation request timed out.")
+                return None
+
+            status_url = f"{BACKEND_STATUS_URL}{job_id}"
+            status_response = requests.get(status_url, timeout=30)
+            status_response.raise_for_status()
+            
+            status_data = status_response.json()
+            job_status = status_data.get("status")
+
+            if job_status == "Complete":
+                result_data = status_data.get("result")
+                if result_data and result_data.get("url"):
+                    st.write("Pipeline complete. Received final URL.")
+                    return result_data.get("url") # <-- SUCCESS
+                else:
+                     st.error("Error: Job completed but no URL was found in the result.")
+                     return None
+                
+            elif job_status == "Failed":
+                error_message = status_data.get("error", "Unknown slide generation failure.")
+                st.error(f"Slide Generation Failed: {error_message}")
+                return None
+                
+            elif job_status == "Pending":
+                st.status(f"Generating slides... (Backend is waiting on Google). Checking again in {POLLING_INTERVAL}s.", state="running")
+                time.sleep(POLLING_INTERVAL)
+                
+            else:
+                st.error(f"Error: Unknown job status received: {job_status}")
+                return None
+
+    except requests.exceptions.HTTPError as errh:
+        st.error(f"API Error: {errh.response.status_code} - {errh.response.text}")
+    except requests.exceptions.ConnectionError as errc:
+        st.error(f"Connection Error: Could not connect to the backend at {BASE_URL}.")
+    except requests.exceptions.Timeout as errt:
+        st.error("Error: A request timed out. Please try again.")
+    except requests.exceptions.RequestException as err:
+        st.error(f"An unexpected error occurred: {err}")
+    
+    return None
+    
+# def run_slide_generation_pipeline(company_id: str, current_analysis: dict): 
+    # """
+    # Calls the FastAPI backend to populate the Google Sheet.
+    # """
+    
+    # payload = {
+    #     "company_id": company_id,
+    #     "current_analysis": current_analysis
+    # }
+    
+    # start_time = time.time()
+    
+    # try:
+    #     # --- Step 1: Submit the Slide Gen Job ---
+    #     submit_response = requests.post(BACKEND_SLIDES_URL, json=payload, timeout=30)
+    #     submit_response.raise_for_status()
+        
+    #     if submit_response.status_code != 202:
+    #          st.error(f"Error: Backend did not accept slide job. Status: {submit_response.status_code}, {submit_response.text}")
+    #          return False
+             
+    #     job_id = submit_response.json().get("job_id")
+    #     if not job_id:
+    #         st.error("Error: Backend did not return a job_id for slide generation.")
+    #         return False
+
+    #     st.info(f"Slide content job submitted (Job ID: {job_id}). Waiting for AI population...")
+        
+    #     # This is also a heavy AI call, so we'll use a longer initial delay
+    #     time.sleep(INITIAL_POLLING_DELAY / 2) # Maybe shorter than full analysis
+        
+    #     # --- Step 2: Poll for Results ---
+    #     while True:
+    #         if time.time() - start_time > POLLING_TIMEOUT:
+    #             st.error("Error: The slide content generation request timed out.")
+    #             return False
+
+    #         status_url = f"{BACKEND_STATUS_URL}{job_id}"
+    #         status_response = requests.get(status_url, timeout=30)
+    #         status_response.raise_for_status()
+            
+    #         status_data = status_response.json()
+    #         job_status = status_data.get("status")
+
+    #         if job_status == "Complete":
+    #             st.write("Google Sheet has been populated by AI.")
+    #             return True
+                
+    #         elif job_status == "Failed":
+    #             error_message = status_data.get("error", "Unknown slide generation failure.")
+    #             st.error(f"Slide Generation Failed: {error_message}")
+    #             return False
+                
+    #         elif job_status == "Pending":
+    #             st.status(f"Populating Google Sheet... (Status: {job_status}). Checking again in {POLLING_INTERVAL}s.", state="running")
+    #             time.sleep(POLLING_INTERVAL)
+                
+    #         else:
+    #             st.error(f"Error: Unknown job status received: {job_status}")
+    #             return False
+
+    # except requests.exceptions.HTTPError as errh:
+    #     st.error(f"API Error: {errh.response.status_code} - {errh.response.text}")
+    # except requests.exceptions.ConnectionError as errc:
+    #     st.error(f"Connection Error: Could not connect to the backend at {BASE_URL}.")
+    # except requests.exceptions.Timeout as errt:
+    #     st.error("Error: A request timed out. Please try again.")
+    # except requests.exceptions.RequestException as err:
+    #     st.error(f"An unexpected error occurred: {err}")
+    
+    # return False
