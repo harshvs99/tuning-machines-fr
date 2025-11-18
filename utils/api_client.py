@@ -8,6 +8,7 @@ BASE_URL = st.secrets["BACKEND_BASE_URL"]
 BACKEND_SUBMIT_URL = f"{BASE_URL}/analyze/all"
 BACKEND_STATUS_URL = f"{BASE_URL}/analyze/status/"
 BACKEND_UPDATE_URL = f"{BASE_URL}/analyze/update"
+BACKEND_SLIDES_URL = f"{BASE_URL}/analyze/slides"
 
 
 # Polling parameters
@@ -188,3 +189,91 @@ def run_update_pipeline(company_id: str, current_analysis: dict, chat_history: l
         st.error(f"An unexpected error occurred: {err}")
     
     return False
+
+def run_slide_generation(company_id: str, current_analysis: dict) -> str | None:
+    """
+    Calls the FastAPI backend to *generate the final slide presentation*.
+    Returns the URL string on success, or None on failure.
+    """
+    
+    # payload = {
+    #     "company_id": company_id,
+    #     "current_analysis": current_analysis
+    # }
+    payload = {
+        "company_id": company_id,
+        **current_analysis  # This unpacks all keys (l1_report, scoring_report) here
+    }
+    
+    start_time = time.time()
+    
+    try:
+        # --- Step 1: Submit the Slide Gen Job ---
+        submit_response = requests.post(BACKEND_SLIDES_URL, json=payload, timeout=30)
+        submit_response.raise_for_status()
+        
+        if submit_response.status_code != 202:
+             st.error(f"Error: Backend did not accept slide job. Status: {submit_response.status_code}, {submit_response.text}")
+             return None
+             
+        job_id = submit_response.json().get("job_id")
+        if not job_id:
+            st.error("Error: Backend did not return a job_id for the slide generation.")
+            return None
+
+        st.info(f"Slide generation job submitted (Job ID: {job_id}). This may take 2-3 minutes...")
+        
+        # This pipeline runs AI, writes to a sheet, and builds a slide deck.
+        # We give it a slightly longer initial delay.
+        time.sleep(POLLING_INTERVAL) 
+        
+        # --- Step 2: Poll for Results ---
+        while True:
+            if time.time() - start_time > POLLING_TIMEOUT:
+                st.error("Error: The slide generation request timed out.")
+                return None
+
+            status_url = f"{BACKEND_STATUS_URL}{job_id}"
+            status_response = requests.get(status_url, timeout=30)
+            status_response.raise_for_status()
+            
+            status_data = status_response.json()
+            job_status = status_data.get("status")
+
+            if job_status == "Complete":
+                result_data = status_data.get("result")
+                if result_data is None:
+                     st.error("Error: Job completed but no result data was found.")
+                     return None
+                
+                # --- SUCCESS: Return the final URL ---
+                final_url = result_data.get("slide_url")
+                if not final_url:
+                    st.error("Error: Job completed but no 'slide_url' was returned in result.")
+                    return None
+                    
+                return final_url
+                
+            elif job_status == "Failed":
+                error_message = status_data.get("error", "Unknown analysis failure.")
+                st.error(f"Slide Generation Failed: {error_message}")
+                return None
+                
+            elif job_status == "Pending":
+                st.status(f"Generating slides... (Status: {job_status}). Checking again in {POLLING_INTERVAL}s.", state="running")
+                time.sleep(POLLING_INTERVAL)
+                
+            else:
+                st.error(f"Error: Unknown job status received: {job_status}")
+                return None
+
+    except requests.exceptions.HTTPError as errh:
+        st.error(f"API Error: {errh.response.status_code} - {errh.response.text}")
+    except requests.exceptions.ConnectionError as errc:
+        st.error(f"Connection Error: Could not connect to the backend at {BASE_URL}.")
+    except requests.exceptions.Timeout as errt:
+        st.error("Error: A request timed out. Please try again.")
+    except requests.exceptions.RequestException as err:
+        st.error(f"An unexpected error occurred: {err}")
+    
+    return None
